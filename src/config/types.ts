@@ -239,6 +239,7 @@ import {
   kWarning,
   kWebtex,
   kWrap,
+  kPreserveANSI,
 } from "./constants.ts";
 
 import { HtmlPostProcessor, RenderServices } from "../command/render/types.ts";
@@ -525,6 +526,7 @@ export interface FormatExecute {
     | "none"
     | "last_expr_or_assign";
   [kPlotlyConnected]?: boolean;
+  [kPreserveANSI]?: boolean;
 }
 
 export interface FormatPandoc {

@@ -139,6 +139,8 @@ export const kHtmlTableProcessing = "html-table-processing";
 export const kUseRsvgConvert = "use-rsvg-convert";
 export const kValidateYaml = "validate-yaml";
 
+export const kPreserveANSI = "preserve-ansi";
+
 export const kIdentifierDefaultsKeys = [
   kTargetFormat,
   kDisplayName,

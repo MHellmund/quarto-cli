@@ -221,3 +221,10 @@
   tags:
     formats: [$pdf-all]
   description: If `true`, attempt to use `rsvg-convert` to convert SVG images to PDF.
+
+- name: preserve-ansi
+  schema: boolean
+  default: false
+  tags:
+    contexts: [document-execute]
+  description: "Preserve ANSI escape sequences in code cell output during ipynb -> qmd conversion. Needs an appropriate Pandoc filter."

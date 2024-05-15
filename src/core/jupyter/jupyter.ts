@@ -123,6 +123,7 @@ import {
   kTblCapLoc,
   kTblColwidths,
   kWarning,
+  kPreserveANSI,
 } from "../../config/constants.ts";
 import {
   isJupyterKernelspec,
@@ -1620,7 +1621,7 @@ async function mdFromCodeCell(
           }
           md.push(text.join(""));
         } else {
-          md.push(mdOutputStream(stream));
+          md.push(mdOutputStream(stream, options));
         }
       } else if (output.output_type === "error") {
         md.push(await mdOutputError(output as JupyterOutputError, options));
@@ -1757,7 +1758,10 @@ function isMarkdown(output: JupyterOutput, options: JupyterToMarkdownOptions) {
   return isDisplayDataType(output, options, displayDataIsMarkdown);
 }
 
-function mdOutputStream(output: JupyterOutputStream) {
+function mdOutputStream(
+  output: JupyterOutputStream,
+  options: JupyterToMarkdownOptions,
+) {
   let text: string[] = [];
   if (typeof output.text === "string") {
     text = [output.text];
@@ -1772,14 +1776,22 @@ function mdOutputStream(output: JupyterOutputStream) {
         /<ipython-input.*?>:\d+:\s+/,
         "",
       );
-      return mdCodeOutput(
-        [firstLine, ...text.slice(1)].map(colors.stripColor),
-      );
+      if (options.execute[kPreserveANSI]) {
+        return mdCodeOutput([firstLine, ...text.slice(1)], );
+      } else {
+        return mdCodeOutput(
+          [firstLine, ...text.slice(1)].map(colors.stripColor),
+        );
+      }
     }
   }
 
   // normal default handling
-  return mdCodeOutput(text.map(colors.stripColor));
+  if (options.execute[kPreserveANSI]) {
+    return mdCodeOutput(text);
+  } else {
+    return mdCodeOutput(text.map(colors.stripColor));
+  }
 }
 
 async function mdOutputError(
@@ -1787,6 +1799,9 @@ async function mdOutputError(
   options: JupyterToMarkdownOptions,
 ) {
   const traceback = output.traceback.join("\n");
+  if (options.execute[kPreserveANSI]) {
+    return mdCodeOutput([traceback])
+  }
   if (
     !options.toHtml ||
     (!hasAnsiEscapeCodes(output.evalue) && !hasAnsiEscapeCodes(traceback))
@@ -1856,7 +1871,7 @@ async function mdOutputDisplayData(
       const data = output.data[mimeType] as unknown;
       if (!Array.isArray(data) || data.some((s) => typeof s !== "string")) {
         return mdWarningOutput(`Unable to process text plain output data 
-which does not appear to be plain text: ${JSON.stringify(data)}`);
+which does not appear to be plain text: ${JSON.stringify(data)}`, options);
       }
       const lines = data as string[];
       // pandas inexplicably outputs html tables as text/plain with an enclosing single-quote
@@ -1868,7 +1883,7 @@ which does not appear to be plain text: ${JSON.stringify(data)}`);
         lines[0] = lines[0].slice(1, -1);
         return mdMarkdownOutput(lines);
       } else {
-        if (options.toHtml) {
+        if (options.toHtml && !options.execute[kPreserveANSI]) {
           if (lines.some(hasAnsiEscapeCodes)) {
             const html = await Promise.all(
               lines.map(convertToHtmlSpans),
@@ -1883,6 +1898,8 @@ which does not appear to be plain text: ${JSON.stringify(data)}`);
           } else {
             return mdCodeOutput(lines);
           }
+        } else if (options.execute[kPreserveANSI]){
+          return mdCodeOutput(lines);
         } else {
           return mdCodeOutput(lines.map(colors.stripColor));
         }
@@ -1893,7 +1910,7 @@ which does not appear to be plain text: ${JSON.stringify(data)}`);
   // no type match found
   return mdWarningOutput(
     "Unable to display output for mime type(s): " +
-      Object.keys(output.data).join(", "),
+      Object.keys(output.data).join(", "), options,
   );
 }
 
@@ -2046,12 +2063,12 @@ function mdEnclosedOutput(begin: string, text: string[], end: string) {
   return md.join("");
 }
 
-function mdWarningOutput(msg: string) {
+function mdWarningOutput(msg: string, options: JupyterToMarkdownOptions) {
   return mdOutputStream({
     output_type: "stream",
     name: "stderr",
     text: [msg],
-  });
+  }, options);
 }
 
 function isWarningOutput(output: JupyterOutput) {
