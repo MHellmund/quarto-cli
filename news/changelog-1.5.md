@@ -57,6 +57,7 @@ All changes included in 1.5:
 - ([#8851](https://github.com/quarto-dev/quarto-cli/issues/8851)): Don't strip `index.html` from external paths.
 - ([#8977](https://github.com/quarto-dev/quarto-cli/issues/8977)): Don't decorate about links within external link icons.
 - ([#9356](https://github.com/quarto-dev/quarto-cli/issues/9356)): Don't process column classes for figures inside the About divs.
+- ([#9781](https://github.com/quarto-dev/quarto-cli/issues/9781)): Correctly hide elements from click event in collapsed margin sidebar.
 
 ## Book
 
@@ -144,6 +145,7 @@ All changes included in 1.5:
 ## Publishing
 
 - ([#9308](https://github.com/quarto-dev/quarto-cli/issues/9308)): Improved error message when trying to publish to Github pages with `quarto publish gh-pages`.
+- ([#9585](https://github.com/quarto-dev/quarto-cli/issues/9585)): Improved `quarto publish gh-pages` workflow when existing gh-pages branch is present or problem with the remote repository.
 
 ## `quarto inspect`
 
