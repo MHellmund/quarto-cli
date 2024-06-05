@@ -342,26 +342,6 @@ end, function(float)
   end
   latex_caption = latex_caption or pandoc.Inlines({})
 
-  if #latex_caption == 0 then
-    local caption_setup = quarto.LatexInlineCommand({
-      name = "captionsetup",
-      arg = "labelsep=none"
-    })
-    local pt = pandoc.utils.type(float.content)
-    if pt == "Block" then
-      if float.content.content == nil then
-        -- it's a block that doesn't support inner content
-        -- attempt a best-effort fix by replacing it with a wrapping div
-        float.content = pandoc.Div({float.content})
-      end
-      float.content.content:insert(1, caption_setup)
-    elseif pt == "Blocks" then
-      float.content:insert(1, caption_setup)
-    else
-      internal_error()
-    end
-  end
-
   local label_cmd = quarto.LatexInlineCommand({
     name = "label",
     arg = pandoc.RawInline("latex", float.identifier)
@@ -988,7 +968,7 @@ end, function(float)
     -- luacov: enable
   end
   local kind = "quarto-float-" .. ref
-  local supplement = info.name
+  local supplement = titleString('fig', info.name)
   -- FIXME: custom numbering doesn't work yet
   -- local numbering = ""
   -- if float.parent_id then
@@ -1009,13 +989,13 @@ end, function(float)
   if float.has_subfloats then
     return _quarto.format.typst.function_call("quarto_super", {
       {"kind", kind},
-      {"caption", float.caption_long},
+      {"caption", _quarto.modules.typst.as_typst_content(float.caption_long)},
       {"label", pandoc.RawInline("typst", "<" .. float.identifier .. ">")},
       {"position", pandoc.RawInline("typst", caption_location)},
       {"supplement", supplement},
       {"subrefnumbering", "1a"},
       {"subcapnumbering", "(a)"},
-      content
+      _quarto.modules.typst.as_typst_content(content)
     }, false)
   else
     return make_typst_figure {

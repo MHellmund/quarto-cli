@@ -95,7 +95,7 @@ end, function(layout)
     return float.content
     -- luacov: enable
   end
-  local supplement = info.name
+  local supplement = titleString(ref, info.name)
 
   -- typst output currently only supports a single grid
   -- as output, so no rows of varying columns, etc.
@@ -124,21 +124,21 @@ end, function(layout)
   if layout.float.has_subfloats then
     result:insert(_quarto.format.typst.function_call("quarto_super", {
       {"kind", kind},
-      {"caption", layout.float.caption_long},
+      {"caption", _quarto.format.typst.as_typst_content(layout.float.caption_long)},
       {"label", pandoc.RawInline("typst", "<" .. layout.float.identifier .. ">")},
       {"position", pandoc.RawInline("typst", caption_location)},
       {"supplement", supplement},
       {"subrefnumbering", "1a"},
       {"subcapnumbering", "(a)"},
-      cells
+      _quarto.format.typst.as_typst_content(cells)
     }, false))
   else
-    result:insert(make_typst_figure {
+    result:extend(make_typst_figure {
       content = cells,
       caption_location = caption_location,
       caption = layout.float.caption_long,
       kind = kind,
-      supplement = info.prefix,
+      supplement = titleString(ref, info.prefix),
       numbering = info.numbering,
       identifier = layout.float.identifier
     })
