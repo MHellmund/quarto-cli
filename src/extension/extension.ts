@@ -24,7 +24,12 @@ import {
   relative,
 } from "../deno_ral/path.ts";
 import { Metadata, QuartoFilter } from "../config/types.ts";
-import { kSkipHidden, normalizePath, resolvePathGlobs } from "../core/path.ts";
+import {
+  kSkipHidden,
+  normalizePath,
+  resolvePathGlobs,
+  safeExistsSync,
+} from "../core/path.ts";
 import { toInputRelativePaths } from "../project/project-shared.ts";
 import { projectType } from "../project/types/project-types.ts";
 import { mergeConfigs } from "../core/config.ts";
@@ -413,7 +418,10 @@ export async function readExtensions(
   organization?: string,
 ) {
   const extensions: Extension[] = [];
-  const extensionDirs = Deno.readDirSync(extensionsDirectory);
+  const extensionDirs = safeExistsSync(extensionsDirectory) &&
+      Deno.statSync(extensionsDirectory).isDirectory
+    ? Deno.readDirSync(extensionsDirectory)
+    : [];
   for (const extensionDir of extensionDirs) {
     if (extensionDir.isDirectory) {
       const extFile = extensionFile(
@@ -516,6 +524,11 @@ export function inputExtensionDirs(input?: string, projectDir?: string) {
     return extensionDirectories;
   } else if (input) {
     const dir = extensionsDirPath(inputDirName(input));
+    if (dir) {
+      extensionDirectories.push(dir);
+    }
+  } else if (projectDir) {
+    const dir = extensionsDirPath(projectDir);
     if (dir) {
       extensionDirectories.push(dir);
     }
@@ -685,9 +698,9 @@ async function readExtension(
     contributes?.format as Metadata || {};
 
   // Read any embedded extension
-  const embeddedExtensions = existsSync(join(extensionDir, kExtensionDir))
-    ? await readExtensions(join(extensionDir, kExtensionDir))
-    : [];
+  const embeddedExtensions = await readExtensions(
+    join(extensionDir, kExtensionDir),
+  );
 
   // Resolve 'default' specially
   Object.keys(formats).forEach((key) => {
@@ -771,6 +784,23 @@ async function readExtension(
     },
   );
   const project = (contributes?.project || {}) as Record<string, unknown>;
+  // resolve project pre- and post-render scripts to their full path
+  if (
+    project.project &&
+    (project.project as Record<string, unknown>)["pre-render"]
+  ) {
+    const preRender =
+      (project.project as Record<string, unknown>)["pre-render"] as string[];
+    const resolved = resolvePathGlobs(
+      extensionDir,
+      preRender as string[],
+      [],
+    );
+    if (resolved.include.length > 0) {
+      (project.project as Record<string, unknown>)["pre-render"] = resolved
+        .include;
+    }
+  }
   const revealJSPlugins = ((contributes?.[kRevealJSPlugins] || []) as Array<
     string | RevealPluginBundle | RevealPlugin
   >).map((plugin) => {

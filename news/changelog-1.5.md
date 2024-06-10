@@ -116,6 +116,7 @@ All changes included in 1.5:
 
 - ([#8385](https://github.com/quarto-dev/quarto-cli/issues/8385)): Properly copy project resources when extensions are installed at project level.
 - ([#8547](https://github.com/quarto-dev/quarto-cli/issues/8547)): Support installing extensions from github branch with forward slash in the name.
+- ([#9889](https://github.com/quarto-dev/quarto-cli/issues/9889)): Support `pre-render` and `post-render` script lists in `project` contributions from extensions.
 
 ## Shortcodes
 
@@ -125,6 +126,7 @@ All changes included in 1.5:
 - ([#9664](https://github.com/quarto-dev/quarto-cli/pull/9664)): Add `placeholder` shortcode to produce placeholder images.
 - ([#9665](https://github.com/quarto-dev/quarto-cli/issues/9665)): Fix issue with key-value arguments of shortcode handlers in code contexts.
 - ([#9793](https://github.com/quarto-dev/quarto-cli/issues/9793)): `embed` shortcode now correctly retrieve svg image from embdedded cell.
+- ([#9903](https://github.com/quarto-dev/quarto-cli/issues/9903)): Allow shortcode resolution inside element attributes (currently headers, divs, spans, images, links). Currently, this requires attributes to be specified with single quotes, see issue for details.
 
 ## Lightbox Images
 
@@ -172,6 +174,7 @@ All changes included in 1.5:
 
 - ([#9572](https://github.com/quarto-dev/quarto-cli/issues/9572)): Add `quarto.config.cli_path()` in Quarto LUA to return the path to the Quarto CLI executable of the installation running the Lua script in quarto context.
 - ([#9691](https://github.com/quarto-dev/quarto-cli/issues/9691)): Provide default Attr object to `quarto.Tabset` constructor.
+- ([#9696](https://github.com/quarto-dev/quarto-cli/issues/9696)): Don't use `.hidden` in `data-qmd` scaffolds.
 
 ## Other Fixes and Improvements
 
