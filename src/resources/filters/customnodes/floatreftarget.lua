@@ -327,6 +327,18 @@ end, function(float)
     float.content.caption.long = float.caption_long
     float.content.attr = pandoc.Attr(float.identifier, float.classes or {}, float.attributes or {})
     return float.content
+  elseif float_type == "lst" then
+    local handle_code_block = function(codeblock)
+      codeblock.attr = merge_attrs(codeblock.attr, pandoc.Attr("", float.classes or {}, float.attributes or {}))
+      return codeblock
+    end
+    if float.content.t == "CodeBlock" then
+      float.content = handle_code_block(float.content)
+    else
+      float.content = _quarto.ast.walk(float.content, {
+        CodeBlock = handle_code_block
+      })
+    end
   end
 
   local fig_scap = attribute(float, kFigScap, nil)
@@ -968,7 +980,7 @@ end, function(float)
     -- luacov: enable
   end
   local kind = "quarto-float-" .. ref
-  local supplement = titleString('fig', info.name)
+  local supplement = titleString(ref, info.name)
   -- FIXME: custom numbering doesn't work yet
   -- local numbering = ""
   -- if float.parent_id then
@@ -1004,7 +1016,7 @@ end, function(float)
       caption = float.caption_long,
       kind = kind,
       supplement = supplement,
-      numbering = numbering,
+      -- numbering = numbering,
       identifier = float.identifier
     }
   end

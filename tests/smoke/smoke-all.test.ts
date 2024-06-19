@@ -32,13 +32,15 @@ import {
   ensurePptxXpath,
   ensurePptxLayout,
   ensurePptxMaxSlides,
+  ensureLatexFileRegexMatches,
 } from "../verify.ts";
-import { readYaml, readYamlFromMarkdown } from "../../src/core/yaml.ts";
-import { outputForInput } from "../utils.ts";
+import { readYamlFromMarkdown } from "../../src/core/yaml.ts";
+import { findProjectDir, findProjectOutputDir, outputForInput } from "../utils.ts";
 import { jupyterNotebookToMarkdown } from "../../src/command/convert/jupyter.ts";
 import { basename, dirname, join, relative } from "../../src/deno_ral/path.ts";
-import { existsSync, WalkEntry } from "fs/mod.ts";
+import { WalkEntry } from "fs/mod.ts";
 import { quarto } from "../../src/quarto.ts";
+import { safeExistsSync, safeRemoveSync } from "../../src/core/path.ts";
 
 async function fullInit() {
   await initYamlIntelligenceResourcesFromFilesystem();
@@ -96,6 +98,7 @@ function resolveTestSpecs(
   const verifyMap: Record<string, any> = {
     ensureHtmlElements,
     ensureFileRegexMatches,
+    ensureLatexFileRegexMatches,
     ensureTypstFileRegexMatches,
     ensureDocxRegexMatches,
     ensureDocxXpath,
@@ -112,7 +115,7 @@ function resolveTestSpecs(
   for (const [format, testObj] of Object.entries(specs)) {
     let checkWarnings = true;
     const verifyFns: Verify[] = [];
-    if (testObj) {
+    if (testObj && typeof testObj === "object") {
       for (
         // deno-lint-ignore no-explicit-any
         const [key, value] of Object.entries(testObj as Record<string, any>)
@@ -122,8 +125,9 @@ function resolveTestSpecs(
           verifyFns.push(noErrors);
         } else {
           // See if there is a project and grab it's type
-          const projectOutDir = findProjectOutputDir(input);
-          const outputFile = outputForInput(input, format, projectOutDir, metadata);
+          const projectPath = findSmokeAllProjectDir(input)
+          const projectOutDir = findProjectOutputDir(projectPath);
+          const outputFile = outputForInput(input, format, projectOutDir, projectPath, metadata);
           if (key === "fileExists") {
             for (
               const [path, file] of Object.entries(
@@ -150,11 +154,23 @@ function resolveTestSpecs(
               verifyFns.push(verifyMap[key](outputFile.outputPath, ...value));
             }
           } else if (verifyMap[key]) {
+            // FIXME: We should find another way that having this requirement of keep-* in the metadata
+            if (key === "ensureTypstFileRegexMatches") {
+              if (!metadata.format?.typst?.['keep-typ'] && !metadata['keep-typ']) {
+                throw new Error(`Using ensureTypstFileRegexMatches requires setting 'keep-typ: true' in file ${input}`);
+              }
+            } else if (key === "ensureLatexFileRegexMatches") {
+              if (!metadata.format?.pdf?.['keep-tex'] && !metadata['keep-tex']) {
+                throw new Error(`Using ensureLatexFileRegexMatches requires setting 'keep-tex: true' in file ${input}`);
+              }
+            }
             if (typeof value === "object") {
               verifyFns.push(verifyMap[key](outputFile.outputPath, ...value));
             } else {
               verifyFns.push(verifyMap[key](outputFile.outputPath, value));
             }
+          } else {
+            throw new Error(`Unknown verify function used: ${key} in file ${input} for format ${format}`) ;
           }
         }
       }
@@ -194,7 +210,13 @@ if (Deno.args.length === 0) {
   }
 }
 
+// To store project path we render before testing file testSpecs
 const renderedProjects: Set<string> = new Set();
+// To store information of all the project we render so that we can cleanup after testing
+const testedProjects: Set<string> = new Set();
+
+// Create an array to hold all the promises for the tests of files
+let testFilesPromises = [];
 
 for (const { path: fileName } of files) {
   const input = relative(Deno.cwd(), fileName);
@@ -202,7 +224,8 @@ for (const { path: fileName } of files) {
   const metadata = input.endsWith("md") // qmd or md
     ? readYamlFromMarkdown(Deno.readTextFileSync(input))
     : readYamlFromMarkdown(await jupyterNotebookToMarkdown(input, false));
-  const testSpecs = [];
+
+  const testSpecs: QuartoInlineTestSpec[] = [];
 
   if (hasTestSpecs(metadata)) {
     testSpecs.push(...resolveTestSpecs(input, metadata));
@@ -217,87 +240,94 @@ for (const { path: fileName } of files) {
     }
   }
 
-  // FIXME this will leave the project in a dirty state
-  // tests run asynchronously so we can't clean up until all tests are done
-  // and I don't know of a way to wait for that
+  // Get project path for this input and store it if this is a project (used for cleaning)
+  const projectPath = findSmokeAllProjectDir(input);
+  if (projectPath) testedProjects.add(projectPath);
 
-  if ((metadata["_quarto"] as any)?.["render-project"]) {
-    const projectPath = findProjectDir(input);
-    if (projectPath && !renderedProjects.has(projectPath)) {
+  // Render project before testing individual document if required
+  if (
+    (metadata["_quarto"] as any)?.["render-project"] && 
+    projectPath && 
+    !renderedProjects.has(projectPath)
+  ) {
       await quarto(["render", projectPath]);
       renderedProjects.add(projectPath);
     }
-  }
 
-  for (const testSpec of testSpecs) {
-    const {
-      format,
-      verifyFns,
-      //deno-lint-ignore no-explicit-any
-    } = testSpec as any;
-    if (format === "editor-support-crossref") {
-      const tempFile = Deno.makeTempFileSync();
-      testQuartoCmd("editor-support", ["crossref", "--input", input, "--output", tempFile], verifyFns, {
-        teardown: () => {
-          Deno.removeSync(tempFile);
-          return Promise.resolve();
-        }
-      }, `quarto editor-support crossref < ${input}`);
-    } else {
-      testQuartoCmd("render", [input, "--to", format], verifyFns, {
-        prereq: async () => {
-          setInitializer(fullInit);
-          await initState();
-          return Promise.resolve(true);
-        },
-        teardown: () => {
-          cleanoutput(input, format, undefined, metadata);
-          return Promise.resolve();
-        },
-      });
-    }
-  }
-}
+  testFilesPromises.push(new Promise<void>(async (resolve, reject) => {
+    try {
 
-function findProjectDir(input: string): string | undefined {
-  let dir = dirname(input);
-  while (dir !== "" && dir !== ".") {
-    const filename = ["_quarto.yml", "_quarto.yaml"].find((file) => {
-      const yamlPath = join(dir, file);
-      if (existsSync(yamlPath)) {
-        return true;
+      // Create an array to hold all the promises for the testSpecs
+      let testSpecPromises = [];
+      
+      for (const testSpec of testSpecs) {
+        const {
+          format,
+          verifyFns,
+          //deno-lint-ignore no-explicit-any
+        } = testSpec as any;
+        testSpecPromises.push(new Promise<void>((testSpecResolve, testSpecReject) => {
+          try {
+            if (format === "editor-support-crossref") {
+              const tempFile = Deno.makeTempFileSync();
+              testQuartoCmd("editor-support", ["crossref", "--input", input, "--output", tempFile], verifyFns, {
+                teardown: () => {
+                  Deno.removeSync(tempFile);
+                  testSpecResolve(); // Resolve the promise for the testSpec
+                  return Promise.resolve();
+                }
+              }, `quarto editor-support crossref < ${input}`);
+            } else {
+              testQuartoCmd("render", [input, "--to", format], verifyFns, {
+                prereq: async () => {
+                  setInitializer(fullInit);
+                  await initState();
+                  return Promise.resolve(true);
+                },
+                teardown: () => {
+                  cleanoutput(input, format, undefined, undefined, metadata);
+                  testSpecResolve(); // Resolve the promise for the testSpec
+                  return Promise.resolve();
+                },
+              });
+            }
+          } catch (error) {
+            testSpecReject(error);
+          }
+        }));
+          
       }
-    });
-    if (filename) {
-      return dir;
-    }
 
-    const newDir = dirname(dir); // stops at the root for both Windows and Posix
-    if (newDir === dir) {
-      return;
+      // Wait for all the promises to resolve
+      await Promise.all(testSpecPromises);
+
+      // Resolve the promise for the file
+      resolve();
+
+    } catch (error) {
+      reject(error);
     }
-    dir = newDir;
-  }
+  }));
 }
 
-function findProjectOutputDir(input: string) {
-  const dir = findProjectDir(input);
-  if (!dir) {
-    return;
+// Wait for all the promises to resolve
+// Meaning all the files have been tested and we can clean
+Promise.all(testFilesPromises).then(() => {
+  // Clean up any projects that were tested
+  for (const project of testedProjects) {
+    // Clean project output directory
+    const projectOutDir = join(project, findProjectOutputDir(project));
+    if (safeExistsSync(projectOutDir)) {
+      safeRemoveSync(projectOutDir, { recursive: true });
+    }
+    // Clean hidden .quarto directory
+    const hiddenQuarto = join(project, ".quarto");
+    if (safeExistsSync(hiddenQuarto)) {
+      safeRemoveSync(hiddenQuarto, { recursive: true });
+    }
   }
-  const yaml = readYaml(join(dir, "_quarto.yml"));
-  let type = undefined;
-  try {
-    // deno-lint-ignore no-explicit-any
-    type = ((yaml as any).project as any).type;
-  } catch (error) {
-    throw new Error("Failed to read quarto project YAML", error);
-  }
+}).catch((_error) => {});
 
-  if (type === "book") {
-    return "_book";
-  }
-  if (type === "website") {
-    return (yaml as any)?.project?.["output-dir"] || "_site";
-  }
+function findSmokeAllProjectDir(input: string) {
+  return findProjectDir(input, /smoke-all$/);
 }

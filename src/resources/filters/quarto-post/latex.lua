@@ -289,6 +289,19 @@ function render_latex()
             return nil, false
           end,
         })
+      elseif float.type == "Listing" then
+        float.content = _quarto.ast.walk(float.content, {
+          traverse = "topdown",
+          -- A Listing float with a decoratedcodeblock inside it needs
+          -- to be deconstructed
+          DecoratedCodeBlock = function(block)
+            if block.filename ~= nil then
+              float.caption_long.content:insert(1, pandoc.Space())
+              float.caption_long.content:insert(1, pandoc.Code(block.filename))
+            end
+            return block.code_block
+          end
+        })
       end
       float.content = _quarto.ast.walk(quarto.utils.as_blocks(float.content), {
         PanelLayout = function(panel)
@@ -438,7 +451,7 @@ function render_latex_fixups()
       if _quarto.format.isRawLatex(raw) then
         local long_table_match = _quarto.modules.patterns.match_all_in_table(_quarto.patterns.latexLongtablePattern)
         local caption_match = _quarto.modules.patterns.match_all_in_table(_quarto.patterns.latexCaptionPattern)
-        if long_table_match(raw.text) and caption_match(raw.text) then
+        if long_table_match(raw.text) and not caption_match(raw.text) then
           raw.text = raw.text:gsub(
             _quarto.modules.patterns.combine_patterns(_quarto.patterns.latexLongtablePattern), "\\begin{longtable*}%2\\end{longtable*}", 1)
           return raw
