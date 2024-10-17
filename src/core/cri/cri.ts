@@ -6,7 +6,7 @@
  * Copyright (c) 2022 Posit Software, PBC.
  */
 
-import { decodeBase64 as decode } from "encoding/base64.ts";
+import { decodeBase64 as decode } from "encoding/base64";
 import cdp from "./deno-cri/index.js";
 import { getBrowserExecutablePath } from "../puppeteer.ts";
 import { Semaphore } from "../lib/semaphore.ts";
@@ -82,8 +82,8 @@ export async function criClient(appPath?: string, port?: number) {
     app,
     "--headless",
     "--no-sandbox",
-    "--single-process",
     "--disable-gpu",
+    "--renderer-process-limit=1",
     `--remote-debugging-port=${port}`,
   ];
   const browser = Deno.run({ cmd, stdout: "piped", stderr: "piped" });

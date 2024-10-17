@@ -5,7 +5,7 @@
  */
 
 import { dirname, join } from "../../../deno_ral/path.ts";
-import { existsSync } from "fs/mod.ts";
+import { existsSync } from "../../../deno_ral/fs.ts";
 
 import { PdfEngine } from "../../../config/types.ts";
 import { LatexmkOptions } from "./types.ts";
@@ -180,13 +180,21 @@ async function initialCompileLatex(
       const logText = Deno.readTextFileSync(response.log);
       const missingHyphenationFile = findMissingHyphenationFiles(logText);
       if (missingHyphenationFile) {
-        if (await pkgMgr.installPackages([missingHyphenationFile])) {
-          // We installed hyphenation files, retry
-          continue;
-        } else {
-          writeError("missing hyphenation file", "", response.log);
-          return Promise.reject();
+        // try to install it, unless auto install is opted out
+        if (pkgMgr.autoInstall) {
+          logProgress("Installing missing hyphenation file...");
+          if (await pkgMgr.installPackages([missingHyphenationFile])) {
+            // We installed hyphenation files, retry
+            continue;
+          } else {
+            logProgress("Installing missing hyphenation file failed.");
+          }
         }
+        // Let's just through a warning, but it may not be fatal for the compilation
+        // and we can end normally
+        warning(
+          `Possibly missing hyphenation file: '${missingHyphenationFile}'. See more in logfile (by setting 'latex-clean: false').\n`,
+        );
       }
     } else if (pkgMgr.autoInstall) {
       // try autoinstalling
@@ -204,8 +212,6 @@ async function initialCompileLatex(
         await pkgMgr.updatePackages(true, false);
         packagesUpdated = true;
       }
-
-      const logText = Deno.readTextFileSync(response.log);
 
       // Try to find and install packages
       const packagesInstalled = await findAndInstallPackages(

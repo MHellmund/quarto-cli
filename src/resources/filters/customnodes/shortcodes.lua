@@ -200,6 +200,11 @@ local function handle_shortcode(shortcode_tbl, node, context)
   return callShortcodeHandler(handler, shortcode_struct, context), shortcode_struct
 end
 
+local _shortcodes_filter = nil
+function process_shortcodes(content)
+  return _quarto.ast.walk(content, _shortcodes_filter)
+end
+
 function shortcodes_filter()
 
   local code_shortcode = shortcode_lpeg.make_shortcode_parser({
@@ -227,6 +232,10 @@ function shortcodes_filter()
       return pandoc.utils.stringify(result) 
     end, 
   })
+  local function apply_code_shortcode(text)
+    return shortcode_lpeg.wrap_lpeg_match(code_shortcode, text) or text
+  end
+
   local filter
 
   local block_handler = function(node)
@@ -261,14 +270,14 @@ function shortcodes_filter()
       return
     end
 
-    el.text = shortcode_lpeg.wrap_lpeg_match(code_shortcode, el.text)
+    el.text = apply_code_shortcode(el.text)
     return el
   end
 
   local attr_handler = function(el)
     for k,v in pairs(el.attributes) do
       if type(v) == "string" then
-        el.attributes[k] = shortcode_lpeg.wrap_lpeg_match(code_shortcode, v)
+        el.attributes[k] = apply_code_shortcode(v)
       end
     end
     return el
@@ -302,12 +311,12 @@ function shortcodes_filter()
         RawInline = code_handler,
         Image = function(el)
           el = attr_handler(el)
-          el.src = shortcode_lpeg.wrap_lpeg_match(code_shortcode, el.src)
+          el.src = apply_code_shortcode(el.src)
           return el
         end,
         Link = function(el)
           el = attr_handler(el)
-          el.target = shortcode_lpeg.wrap_lpeg_match(code_shortcode, el.target)
+          el.target = apply_code_shortcode(el.target)
           return el
         end,
         Span = function(el)
@@ -325,6 +334,8 @@ function shortcodes_filter()
       return doc
     end
   }
+
+  _shortcodes_filter = filter
   return filter
 end
 

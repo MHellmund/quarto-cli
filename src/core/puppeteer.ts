@@ -5,9 +5,9 @@
  */
 
 import { readRegistryKey } from "./windows.ts";
-import { which } from "./path.ts";
+import { safeExistsSync, which } from "./path.ts";
 import { error, info } from "../deno_ral/log.ts";
-import { existsSync } from "fs/mod.ts";
+import { existsSync } from "../deno_ral/fs.ts";
 import { UnreachableError } from "./lib/error.ts";
 import { quartoDataDir } from "./appdirs.ts";
 
@@ -202,10 +202,11 @@ export async function withHeadlessBrowser<T>(
 async function findChrome(): Promise<string | undefined> {
   let path;
   if (Deno.build.os === "darwin") {
-    path = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-    if (!existsSync(path)) {
-      return undefined;
-    }
+    const programs = [
+      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+      "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+    ];
+    return programs.find(safeExistsSync);
   } else if (Deno.build.os === "windows") {
     // Try the HKLM key
     const programs = ["chrome.exe", "msedge.exe"];

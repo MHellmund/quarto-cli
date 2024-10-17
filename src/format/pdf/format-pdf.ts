@@ -45,7 +45,7 @@ import { RenderedFile, RenderServices } from "../../command/render/types.ts";
 import { ProjectConfig, ProjectContext } from "../../project/types.ts";
 import { BookExtension } from "../../project/types/book/book-shared.ts";
 
-import { readLines } from "io/read_lines.ts";
+import { readLines } from "io/read-lines";
 import { TempContext } from "../../core/temp.ts";
 import { isLatexPdfEngine, pdfEngine } from "../../config/pdf.ts";
 import { formatResourcePath } from "../../core/resources.ts";
@@ -981,6 +981,10 @@ const longtableBottomCaptionProcessor = () => {
           caption = line;
           capturing = true;
           return undefined;
+        } else if (line.match(/^\\endlastfoot/) && caption) {
+          line = `\\tabularnewline\n${caption}\n${line}`;
+          caption = undefined;
+          return line;
         } else if (line.match(/^\\end{longtable}$/)) {
           scanning = false;
           if (caption) {

@@ -4,7 +4,7 @@
  * Copyright (C) 2020-2022 Posit Software, PBC
  */
 
-import { existsSync, expandGlobSync } from "fs/mod.ts";
+import { existsSync, expandGlobSync } from "../../deno_ral/fs.ts";
 import { extname, join, normalize } from "../../deno_ral/path.ts";
 import { quartoCacheDir } from "../appdirs.ts";
 import { execProcess } from "../process.ts";
@@ -12,6 +12,7 @@ import { architectureToolsPath, resourcePath } from "../resources.ts";
 import { RunHandler, RunHandlerOptions } from "./types.ts";
 import { removeIfExists } from "../path.ts";
 import { copyTo } from "../copy.ts";
+import { quartoConfig } from "../quarto.ts";
 
 export const denoRunHandler: RunHandler = {
   canHandle: (script: string) => {
@@ -42,8 +43,10 @@ export const denoRunHandler: RunHandler = {
           "run",
           "--import-map",
           importMap,
-          "--cached-only",
+          // --cached-only can only be used in bundles as vendoring is not done anymore in dev mode
+          ...(quartoConfig.isDebug() ? [] : ["--cached-only"]),
           "--allow-all",
+          "--unstable-kv",
           "--unstable-ffi",
           script,
           ...args,

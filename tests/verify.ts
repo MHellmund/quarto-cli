@@ -4,9 +4,9 @@
  * Copyright (C) 2020-2022 Posit Software, PBC
  */
 
-import { existsSync, walkSync} from "fs/mod.ts";
+import { existsSync, walkSync } from "../src/deno_ral/fs.ts";
 import { DOMParser, NodeList } from "../src/core/deno-dom.ts";
-import { assert } from "testing/asserts.ts";
+import { assert } from "testing/asserts";
 import { basename, dirname, join, relative, resolve } from "../src/deno_ral/path.ts";
 import { parseXmlDocument } from "slimdom";
 import xpath from "fontoxpath";
@@ -111,7 +111,7 @@ export const noErrorsOrWarnings: Verify = {
   name: "No Errors or Warnings",
   verify: (outputs: ExecuteOutput[]) => {
     const isErrorOrWarning = (output: ExecuteOutput) => {
-      return output.levelName.toLowerCase() === "warning" ||
+      return output.levelName.toLowerCase() === "warn" ||
         output.levelName.toLowerCase() === "error";
     };
 
@@ -134,12 +134,15 @@ export const noErrorsOrWarnings: Verify = {
 };
 
 export const printsMessage = (
-  level: "DEBUG" | "INFO" | "WARNING" | "ERROR",
-  regex: RegExp,
+  level: "DEBUG" | "INFO" | "WARN" | "ERROR",
+  regex: RegExp | string,
 ): Verify => {
   return {
     name: `${level} matches ${String(regex)}`,
     verify: (outputs: ExecuteOutput[]) => {
+      if (typeof regex === "string") {
+        regex = new RegExp(regex);
+      }
       const printedMessage = outputs.some((output) => {
         return output.levelName === level && output.msg.match(regex);
       });
@@ -453,7 +456,7 @@ export const ensureTypstFileRegexMatches = (
   return(verifyKeepFileRegexMatches("pdf", "typ")(file, matchesUntyped, noMatchesUntyped));
 };
 
-// FIXME: do this properly without resorting on file having keep-typ
+// FIXME: do this properly without resorting on file having keep-tex
 export const ensureLatexFileRegexMatches = (
   file: string,
   matchesUntyped: (string | RegExp)[],

@@ -4,7 +4,7 @@
  * Copyright (C) 2020-2022 Posit Software, PBC
  */
 
-import { existsSync } from "fs/mod.ts";
+import { existsSync } from "../deno_ral/fs.ts";
 import { join } from "../deno_ral/path.ts";
 
 import { quartoCacheDir } from "./appdirs.ts";
@@ -15,9 +15,11 @@ import { dartCompile } from "./dart-sass.ts";
 
 import * as ld from "./lodash.ts";
 import { lines } from "./text.ts";
-import { md5Hash } from "./hash.ts";
-import { debug } from "../deno_ral/log.ts";
-import { safeExistsSync } from "./path.ts";
+import { sassCache } from "./sass/cache.ts";
+import { cssVarsBlock } from "./sass/add-css-vars.ts";
+import { md5HashBytes } from "./hash.ts";
+import { kSourceMappingRegexes } from "../config/constants.ts";
+import { writeTextFileSyncPreserveMode } from "./write.ts";
 
 export interface SassVariable {
   name: string;
@@ -43,6 +45,7 @@ export function outputVariable(
   return `$${variable.name}: ${variable.value}${isDefault ? " !default" : ""};`;
 }
 
+let counter: number = 1;
 export async function compileSass(
   bundles: SassBundleLayers[],
   temp: TempContext,
@@ -103,36 +106,77 @@ export async function compileSass(
   // * Mixins are available to rules as well
   // * Rules may use functions, variables, and mixins
   //   (theme follows framework so it can override the framework rules)
-  const scssInput = [
+  let scssInput = [
+    '// quarto-scss-analysis-annotation { "origin": null }',
     ...frameWorkUses,
+    '// quarto-scss-analysis-annotation { "origin": null }',
     ...quartoUses,
+    '// quarto-scss-analysis-annotation { "origin": null }',
     ...userUses,
+    '// quarto-scss-analysis-annotation { "origin": null }',
     ...frameworkFunctions,
+    '// quarto-scss-analysis-annotation { "origin": null }',
     ...quartoFunctions,
+    '// quarto-scss-analysis-annotation { "origin": null }',
     ...userFunctions,
+    '// quarto-scss-analysis-annotation { "origin": null }',
     ...userDefaults.reverse(),
+    '// quarto-scss-analysis-annotation { "origin": null }',
     ...quartoDefaults.reverse(),
+    '// quarto-scss-analysis-annotation { "origin": null }',
     ...frameworkDefaults.reverse(),
+    '// quarto-scss-analysis-annotation { "origin": null }',
     ...frameworkMixins,
+    '// quarto-scss-analysis-annotation { "origin": null }',
     ...quartoMixins,
+    '// quarto-scss-analysis-annotation { "origin": null }',
     ...userMixins,
+    '// quarto-scss-analysis-annotation { "origin": null }',
     ...frameworkRules,
+    '// quarto-scss-analysis-annotation { "origin": null }',
     ...quartoRules,
+    '// quarto-scss-analysis-annotation { "origin": null }',
     ...userRules,
+    '// quarto-scss-analysis-annotation { "origin": null }',
   ].join("\n\n");
 
   // Compile the scss
-  // Note that you can set this to undefined to bypass the cache entirely
-  const cacheKey = bundles.map((bundle) => bundle.key).join("|") + "-" +
-    (minified ? "min" : "nomin");
-
-  return await compileWithCache(
+  const result = await compileWithCache(
     scssInput,
     loadPaths,
     temp,
-    minified,
-    cacheKey,
+    {
+      compressed: minified,
+      cacheIdentifier: await md5HashBytes(new TextEncoder().encode(scssInput)),
+      addVarsBlock: true,
+    },
   );
+
+  if (!Deno.env.get("QUARTO_SAVE_SCSS")) {
+    return result;
+  }
+  const partialOutput = Deno.readTextFileSync(result);
+  // now we attempt to find the SCSS variables in the output
+  // and inject them back in the SCSS file so that our debug tooling can use them.
+  const scssToWrite = [scssInput];
+  const internalVars = Array.from(
+    partialOutput.matchAll(/(--quarto-scss-export-[^;}]+;?)/g),
+  ).map((m) => m[0]);
+  const annotation = {
+    "css-vars": internalVars,
+  };
+  scssToWrite.push(
+    `// quarto-scss-analysis-annotation ${JSON.stringify(annotation)}`,
+  );
+  scssInput = scssToWrite.join("\n");
+  const prefix = Deno.env.get("QUARTO_SAVE_SCSS");
+  const counterValue = counter++;
+  Deno.writeTextFileSync(
+    `${prefix}-${counterValue}.scss`,
+    scssInput,
+  );
+
+  return result;
 }
 
 /*-- scss:uses --*/
@@ -292,18 +336,45 @@ export function sassLayerDir(
   };
 }
 
+type CompileWithCacheOptions = {
+  compressed?: boolean;
+  cacheIdentifier?: string;
+  addVarsBlock?: boolean;
+};
+
 export async function compileWithCache(
   input: string,
   loadPaths: string[],
   temp: TempContext,
-  compressed?: boolean,
-  cacheIdentifier?: string,
+  options?: CompileWithCacheOptions,
 ) {
-  if (cacheIdentifier) {
-    // Calculate a hash for the input and identifier
-    const identifierHash = md5Hash(cacheIdentifier);
-    const inputHash = md5Hash(input);
+  const {
+    compressed,
+    cacheIdentifier,
+    addVarsBlock,
+  } = options || {};
 
+  const handleVarsBlock = (input: string) => {
+    if (!addVarsBlock) {
+      return input;
+    }
+    try {
+      input += "\n" + cssVarsBlock(input);
+    } catch (e) {
+      console.warn("Error adding css vars block", e);
+      console.warn(
+        "The resulting CSS file will not have SCSS color variables exported as CSS.",
+      );
+      Deno.writeTextFileSync("_quarto_internal_scss_error.scss", input);
+      console.warn(
+        "This is likely a Quarto bug.\nPlease consider reporting it at https://github.com/quarto-dev/quarto-cli,\nalong with the _quarto_internal_scss_error.scss file that can be found in the current working directory.",
+      );
+      throw e;
+    }
+    return input;
+  };
+
+  if (cacheIdentifier) {
     // If there are imports, the computed input Hash is incorrect
     // so we should be using a session cache which will cache
     // across renders, but not persistently
@@ -313,51 +384,18 @@ export async function compileWithCache(
     const cacheDir = useSessionCache
       ? join(temp.baseDir, "sass")
       : quartoCacheDir("sass");
-    const cacheIdxPath = join(cacheDir, "index.json");
-
-    const outputFile = `${identifierHash}.css`;
-    const outputFilePath = join(cacheDir, outputFile);
-
-    // Check whether we can use a cached file
-    let cacheIndex: { [key: string]: { key: string; hash: string } } = {};
-    let writeCache = true;
-    if (existsSync(outputFilePath)) {
-      try {
-        cacheIndex = JSON.parse(Deno.readTextFileSync(cacheIdxPath));
-        const existingEntry = cacheIndex[identifierHash];
-        writeCache = !existingEntry || (existingEntry.hash !== inputHash);
-      } catch {
-        debug(`The scss cache index file ${cacheIdxPath} can't be read.`);
-      }
-    }
-
-    // We need to refresh the cache
-    if (writeCache) {
-      try {
-        await dartCompile(
-          input,
-          outputFilePath,
-          temp,
-          loadPaths,
-          compressed,
-        );
-      } catch (error) {
-        // Compilation failed, so clear out the output file (if exists)
-        // which will be invalid CSS
-        try {
-          if (safeExistsSync(outputFilePath)) {
-            Deno.removeSync(outputFilePath);
-          }
-        } finally {
-          //doesn't matter
-        }
-        throw error;
-      }
-      cacheIndex[identifierHash] = { key: cacheIdentifier, hash: inputHash };
-      Deno.writeTextFileSync(cacheIdxPath, JSON.stringify(cacheIndex));
-    }
-    return outputFilePath;
+    // when using quarto session cache, we ensure to cleanup the cache files at TempContext cleanup
+    const cache = await sassCache(cacheDir, useSessionCache ? temp : undefined);
+    return cache.getOrSet(
+      input,
+      cacheIdentifier,
+      async (outputFilePath: string) => {
+        input = handleVarsBlock(input);
+        await dartCompile(input, outputFilePath, temp, loadPaths, compressed);
+      },
+    );
   } else {
+    input = handleVarsBlock(input);
     const outputFilePath = temp.createFile({ suffix: ".css" });
     // Skip the cache and just compile
     await dartCompile(
@@ -369,4 +407,16 @@ export async function compileWithCache(
     );
     return outputFilePath;
   }
+}
+
+// Clean sourceMappingUrl from css after saas compilation
+export function cleanSourceMappingUrl(cssPath: string): void {
+  const cleaned = Deno.readTextFileSync(cssPath).replaceAll(
+    kSourceMappingRegexes[0],
+    "",
+  ).replaceAll(
+    kSourceMappingRegexes[1],
+    "",
+  );
+  writeTextFileSyncPreserveMode(cssPath, cleaned);
 }

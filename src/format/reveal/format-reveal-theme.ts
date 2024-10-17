@@ -5,7 +5,7 @@
  */
 
 import { dirname, join, relative } from "../../deno_ral/path.ts";
-import { existsSync } from "fs/mod.ts";
+import { existsSync } from "../../deno_ral/fs.ts";
 
 import { kTheme } from "../../config/constants.ts";
 import {
@@ -20,6 +20,7 @@ import { isFileRef } from "../../core/http.ts";
 import { pathWithForwardSlashes } from "../../core/path.ts";
 import { formatResourcePath } from "../../core/resources.ts";
 import {
+  cleanSourceMappingUrl,
   compileSass,
   mergeLayers,
   outputVariable,
@@ -38,6 +39,9 @@ import { titleSlideScss } from "./format-reveal-title.ts";
 import { asCssFont, asCssNumber } from "../../core/css.ts";
 import { cssHasDarkModeSentinel } from "../../core/pandoc/css.ts";
 import { pandocNativeStr } from "../../core/pandoc/codegen.ts";
+import { ProjectContext } from "../../project/types.ts";
+import { brandRevealSassBundleLayers } from "../../core/sass/brand.ts";
+import { md5HashBytes } from "../../core/hash.ts";
 
 export const kRevealLightThemes = [
   "white",
@@ -54,6 +58,7 @@ export const kRevealDarkThemes = [
   "night",
   "blood",
   "moon",
+  "dracula",
 ];
 
 export const kRevealThemes = [...kRevealLightThemes, ...kRevealDarkThemes];
@@ -63,6 +68,7 @@ export async function revealTheme(
   input: string,
   libDir: string,
   temp: TempContext,
+  project: ProjectContext,
 ) {
   // metadata override to return
   const metadata: Metadata = {};
@@ -175,13 +181,24 @@ export async function revealTheme(
     loadPaths,
   };
 
+  const brandLayers: SassBundleLayers[] = await brandRevealSassBundleLayers(
+    input,
+    format,
+    project,
+  );
+
   // compile sass
-  const css = await compileSass([bundleLayers], temp);
+  const css = await compileSass([bundleLayers, ...brandLayers], temp);
+  // Remove sourcemap information
+  cleanSourceMappingUrl(css);
+  // convert from string to bytes
+  const hash = await md5HashBytes(Deno.readFileSync(css));
+  const fileName = `quarto-${hash}`;
   copyTo(
     css,
-    join(revealDestDir, "dist", "theme", "quarto.css"),
+    join(revealDestDir, "dist", "theme", `${fileName}.css`),
   );
-  metadata[kTheme] = "quarto";
+  metadata[kTheme] = fileName;
 
   const highlightingMode: "light" | "dark" =
     cssHasDarkModeSentinel(Deno.readTextFileSync(css)) ? "dark" : "light";
@@ -195,6 +212,10 @@ export async function revealTheme(
   };
 }
 
+// Revealjs framework layer is supposed to be more files but:
+// - Only mixins.scss and theme.scss are needed here
+// - settings.scss is manually included in the quarto.scss file
+// - exposer.scss is loaded in theme.scss and found through the loadPaths
 function revealFrameworkLayer(revealDir: string): SassLayer {
   const readTemplate = (template: string) => {
     return Deno.readTextFileSync(

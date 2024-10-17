@@ -32,7 +32,7 @@ import {
   reconfigureQuarto,
 } from "./core/devconfig.ts";
 import { typstBinaryPath } from "./core/typst.ts";
-import { onCleanup } from "./core/cleanup.ts";
+import { exitWithCleanup, onCleanup } from "./core/cleanup.ts";
 
 import { runScript } from "./command/run/run.ts";
 
@@ -141,6 +141,10 @@ export async function quarto(
     );
   });
 
+  // From here on, we have a temp dir that we need to clean up.
+  // The calls to Deno.exit() above are fine, but no further
+  // ones should be made
+  //
   // init temp dir
   initSessionTempDir();
   onCleanup(cleanupSessionTempDir);
@@ -160,6 +164,7 @@ export async function quarto(
   } catch (e) {
     if (e instanceof CommandError) {
       logError(e, false);
+      exitWithCleanup(1);
     } else {
       throw e;
     }
