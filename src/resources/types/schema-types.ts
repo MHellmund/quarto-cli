@@ -45,6 +45,7 @@ export type PageColumn =
   | "page"
   | "page-left"
   | "page-right"
+  | "page-inset"
   | "page-inset-left"
   | "page-inset-right"
   | "screen"
@@ -1266,6 +1267,7 @@ export type ManuscriptSchema = {
 
 export type BrandMeta = {
   link?: string | {
+    bluesky?: string /* The brand's Bluesky URL. */;
     facebook?: string /* The brand's Facebook URL. */;
     github?: string /* The brand's GitHub URL. */;
     home?: string /* The brand's home page or website. */;
@@ -1349,11 +1351,10 @@ export type BrandTypography = {
 
 export type BrandTypographyOptionsBase = string | {
   "line-height"?: LineHeightNumberString;
-  color?: BrandMaybeNamedColor;
   family?: string;
   size?: string;
   weight?: BrandFontWeight;
-}; /* Typographic options. */
+}; /* Base typographic options. */
 
 export type BrandTypographyOptionsHeadings = string | {
   "line-height"?: LineHeightNumberString;
@@ -1361,7 +1362,7 @@ export type BrandTypographyOptionsHeadings = string | {
   family?: string;
   style?: BrandFontStyle;
   weight?: BrandFontWeight;
-}; /* Typographic options without a font size. */
+}; /* Typographic options for headings. */
 
 export type BrandTypographyOptionsMonospace = string | {
   "background-color"?: BrandMaybeNamedColor;
@@ -1406,7 +1407,8 @@ export type BrandFont =
   | BrandFontGoogle
   | BrandFontBunny
   | BrandFontFile
-  | BrandFontSystem; /* Font files and definitions for the brand. */
+  | BrandFontSystem
+  | BrandFontCommon; /* Font files and definitions for the brand. */
 
 export type BrandFontWeight =
   | 100
@@ -1475,10 +1477,19 @@ export type BrandFontFamily = string;
 
 export type Brand = {
   color?: BrandColor;
-  defaults?: JsonObject;
+  defaults?: BrandDefaults;
   logo?: BrandLogo;
   meta?: BrandMeta;
   typography?: BrandTypography;
+};
+
+export type BrandDefaults = {
+  bootstrap?: BrandDefaultsBootstrap;
+  quarto?: JsonObject;
+};
+
+export type BrandDefaultsBootstrap = {
+  defaults?: { [key: string]: string | boolean | number };
 };
 
 export type ProjectConfig = {

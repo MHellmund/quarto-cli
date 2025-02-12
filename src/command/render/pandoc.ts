@@ -10,8 +10,9 @@ import { info } from "../../deno_ral/log.ts";
 
 import { ensureDir, existsSync, expandGlobSync } from "../../deno_ral/fs.ts";
 
-import { stringify } from "../../core/yaml.ts";
-import { encodeBase64 } from "encoding/base64";
+import { parse as parseYml, stringify } from "../../core/yaml.ts";
+import { copyTo } from "../../core/copy.ts";
+import { decodeBase64, encodeBase64 } from "encoding/base64";
 
 import * as ld from "../../core/lodash.ts";
 
@@ -181,12 +182,7 @@ import {
   processFormatResources,
   writeFormatResources,
 } from "./pandoc-dependencies-resources.ts";
-import {
-  ExplicitTimingEntry,
-  getLuaTiming,
-  insertExplicitTimingEntries,
-  withTiming,
-} from "../../core/timing.ts";
+import { withTiming } from "../../core/timing.ts";
 
 import {
   requiresShortcodeUnescapePostprocessor,
@@ -201,10 +197,118 @@ import {
   MarkdownPipelineHandler,
 } from "../../core/markdown-pipeline.ts";
 import { getEnv } from "../../../package/src/util/utils.ts";
+import {
+  BrandFontBunny,
+  BrandFontFile,
+  BrandFontGoogle,
+} from "../../resources/types/schema-types.ts";
+import { kFieldCategories } from "../../project/types/website/listing/website-listing-shared.ts";
+import { isWindows } from "../../deno_ral/platform.ts";
+import { appendToCombinedLuaProfile } from "../../core/performance/perfetto-utils.ts";
+import { makeTimedFunctionAsync } from "../../core/performance/function-times.ts";
+import { walkJson } from "../../core/json.ts";
 
 // in case we are running multiple pandoc processes
 // we need to make sure we capture all of the trace files
 let traceCount = 0;
+
+const handleCombinedLuaProfiles = (
+  source: string,
+  paramsJson: Record<string, unknown>,
+  temp: TempContext,
+) => {
+  const beforePandocHooks: (() => unknown)[] = [];
+  const afterPandocHooks: (() => unknown)[] = [];
+  const tmp = temp.createFile();
+
+  const combinedProfile = Deno.env.get("QUARTO_COMBINED_LUA_PROFILE");
+  if (combinedProfile) {
+    beforePandocHooks.push(() => {
+      paramsJson["lua-profiler-output"] = tmp;
+    });
+    afterPandocHooks.push(() => {
+      appendToCombinedLuaProfile(
+        source,
+        tmp,
+        combinedProfile,
+      );
+    });
+  }
+  return {
+    before: beforePandocHooks,
+    after: afterPandocHooks,
+  };
+};
+
+function captureRenderCommand(
+  args: Deno.RunOptions,
+  temp: TempContext,
+  outputDir: string,
+) {
+  Deno.mkdirSync(outputDir, { recursive: true });
+  const newArgs = [
+    args.cmd[0],
+    ...args.cmd.slice(1).map((_arg) => {
+      const arg = _arg as string; // we know it's a string, TypeScript doesn't somehow
+      if (!arg.startsWith(temp.baseDir)) {
+        return arg;
+      }
+      const newArg = join(outputDir, basename(arg));
+      if (arg.match(/^.*quarto\-defaults.*.yml$/)) {
+        // we need to correct the defaults YML because it contains a reference to a template in a temp directory
+        const ymlDefaults = Deno.readTextFileSync(arg);
+        const defaults = parseYml(ymlDefaults);
+
+        const templateDirectory = dirname(defaults.template);
+        const newTemplateDirectory = join(
+          outputDir,
+          basename(templateDirectory),
+        );
+        copyTo(templateDirectory, newTemplateDirectory);
+        defaults.template = join(
+          newTemplateDirectory,
+          basename(defaults.template),
+        );
+        const defaultsOutputFile = join(outputDir, basename(arg));
+        Deno.writeTextFileSync(defaultsOutputFile, stringify(defaults));
+        return defaultsOutputFile;
+      }
+      Deno.copyFileSync(arg, newArg);
+      return newArg;
+    }),
+  ] as typeof args.cmd;
+
+  // now we need to correct entries in filterParams
+  const filterParams = JSON.parse(
+    new TextDecoder().decode(decodeBase64(args.env!["QUARTO_FILTER_PARAMS"])),
+  );
+  walkJson(
+    filterParams,
+    (v: unknown) => typeof v === "string" && v.startsWith(temp.baseDir),
+    (_v: unknown) => {
+      const v = _v as string;
+      const newV = join(outputDir, basename(v));
+      Deno.copyFileSync(v, newV);
+      return newV;
+    },
+  );
+
+  Deno.writeTextFileSync(
+    join(outputDir, "render-command.json"),
+    JSON.stringify(
+      {
+        ...args,
+        args: newArgs,
+        env: {
+          ...args.env,
+          "QUARTO_FILTER_PARAMS": encodeBase64(JSON.stringify(filterParams)),
+        },
+      },
+      undefined,
+      2,
+    ),
+  );
+}
 
 export async function runPandoc(
   options: PandocOptions,
@@ -212,10 +316,19 @@ export async function runPandoc(
 ): Promise<RunPandocResult | null> {
   const beforePandocHooks: (() => unknown)[] = [];
   const afterPandocHooks: (() => unknown)[] = [];
+  const setupPandocHooks = (
+    hooks: { before: (() => unknown)[]; after: (() => unknown)[] },
+  ) => {
+    beforePandocHooks.push(...hooks.before);
+    afterPandocHooks.push(...hooks.after);
+  };
+
   const pandocEnv: { [key: string]: string } = {};
 
   const setupPandocEnv = () => {
-    pandocEnv["QUARTO_FILTER_PARAMS"] = encodeBase64(paramsJson);
+    pandocEnv["QUARTO_FILTER_PARAMS"] = encodeBase64(
+      JSON.stringify(paramsJson),
+    );
 
     const traceFilters = pandocMetadata?.["_quarto"]?.["trace-filters"] ||
       Deno.env.get("QUARTO_TRACE_FILTERS");
@@ -278,9 +391,12 @@ export async function runPandoc(
   // save args and metadata so we can print them (we may subsequently edit them)
   const printArgs = [...args];
   let printMetadata = {
-    ...ld.cloneDeep(options.format.metadata),
+    ...options.format.metadata,
+    crossref: {
+      ...(options.format.metadata.crossref || {}),
+    },
     ...options.flags?.metadata,
-  };
+  } as Metadata;
 
   // remove some metadata that are used as parameters to our lua filters
   const cleanMetadataForPrinting = (metadata: Metadata) => {
@@ -423,7 +539,6 @@ export async function runPandoc(
       options.format,
       cwd,
       options.libDir,
-      options.services.temp,
       dependenciesFile,
       options.project,
     );
@@ -579,7 +694,7 @@ export async function runPandoc(
         ),
         ...extras.metadataOverride || {},
       };
-      printMetadata = mergeConfigs(extras.metadata, printMetadata);
+      printMetadata = mergeConfigs(extras.metadata || {}, printMetadata);
       cleanMetadataForPrinting(printMetadata);
     }
 
@@ -587,7 +702,7 @@ export async function runPandoc(
     // or by the project as format extras
     if (extras[kNotebooks]) {
       const documentNotebooks = options.format.render[kNotebookView];
-      // False means taht the user has explicitely disabled notebooks
+      // False means that the user has explicitely disabled notebooks
       if (documentNotebooks !== false) {
         const userNotebooks = documentNotebooks === true
           ? []
@@ -708,7 +823,9 @@ export async function runPandoc(
     }
 
     // more cleanup
-    options.format.metadata = cleanupPandocMetadata(options.format.metadata);
+    options.format.metadata = cleanupPandocMetadata({
+      ...options.format.metadata,
+    });
     printMetadata = cleanupPandocMetadata(printMetadata);
 
     if (extras[kIncludeInHeader]) {
@@ -843,15 +960,12 @@ export async function runPandoc(
   // Attempt to cache the code page, if this windows.
   // We cache the code page to prevent looking it up
   // in the registry repeatedly (which triggers MS Defender)
-  if (Deno.build.os === "windows") {
+  if (isWindows) {
     await cacheCodePage();
   }
 
   // filter results json file
   const filterResultsFile = options.services.temp.createFile();
-
-  // timing results json file
-  const timingResultsFile = options.services.temp.createFile();
 
   const writerKeys: ("to" | "writer")[] = ["to", "writer"];
   for (const key of writerKeys) {
@@ -877,7 +991,14 @@ export async function runPandoc(
     formatFilterParams,
     filterResultsFile,
     dependenciesFile,
-    timingResultsFile,
+  );
+
+  setupPandocHooks(
+    handleCombinedLuaProfiles(
+      options.source,
+      paramsJson,
+      options.services.temp,
+    ),
   );
 
   // remove selected args and defaults if we are handling some things on behalf of pandoc
@@ -1007,6 +1128,10 @@ export async function runPandoc(
       // don't process some format specific metadata that may have been processed already
       // - theme is handled specifically already for revealjs with a metadata override and should not be overridden by user input
       if (key === kTheme && isRevealjsOutput(options.format.pandoc)) {
+        continue;
+      }
+      // - categories are handled specifically already for website projects with a metadata override and should not be overridden by user input
+      if (key === kFieldCategories && projectIsWebsite(options.project)) {
         continue;
       }
       // perform the override
@@ -1175,24 +1300,29 @@ export async function runPandoc(
     );
   }
 
-  // workaround for our wonky Lua timing routines
-  const luaEpoch = await getLuaTiming();
-
-  setupPandocEnv();
-
   // run beforePandoc hooks
   for (const hook of beforePandocHooks) {
     await hook();
   }
 
+  setupPandocEnv();
+
+  const params = {
+    cmd,
+    cwd,
+    env: pandocEnv,
+    ourEnv: Deno.env.toObject(),
+  };
+  const captureCommand = Deno.env.get("QUARTO_CAPTURE_RENDER_COMMAND");
+  if (captureCommand) {
+    captureRenderCommand(params, options.services.temp, captureCommand);
+  }
+  const pandocRender = makeTimedFunctionAsync("pandoc-render", async () => {
+    return await execProcess(params);
+  });
+
   // run pandoc
-  const result = await execProcess(
-    {
-      cmd,
-      cwd,
-      env: pandocEnv,
-    },
-  );
+  const result = await pandocRender();
 
   // run afterPandoc hooks
   for (const hook of afterPandocHooks) {
@@ -1220,24 +1350,6 @@ export async function runPandoc(
     }
   }
 
-  if (existsSync(timingResultsFile)) {
-    const timingResultsJSON = Deno.readTextFileSync(timingResultsFile);
-    if (
-      timingResultsJSON.length > 0 && Deno.env.get("QUARTO_PROFILER_OUTPUT")
-    ) {
-      // workaround for our wonky Lua timing routines
-      const luaNow = await getLuaTiming();
-      const entries = JSON.parse(timingResultsJSON) as ExplicitTimingEntry[];
-
-      insertExplicitTimingEntries(
-        luaEpoch,
-        luaNow,
-        entries,
-        "pandoc",
-      );
-    }
-  }
-
   if (result.success) {
     return {
       inputMetadata: pandocMetadata,
@@ -1255,7 +1367,7 @@ export async function runPandoc(
     // Since this render wasn't successful, clear the code page cache
     // (since the code page could've changed and we could be caching the
     // wrong value)
-    if (Deno.build.os === "windows") {
+    if (isWindows) {
       clearCodePageCache();
     }
 
@@ -1263,13 +1375,12 @@ export async function runPandoc(
   }
 }
 
+// this mutates metadata[kClassOption]
 function cleanupPandocMetadata(metadata: Metadata) {
-  const cleaned = ld.cloneDeep(metadata);
-
   // pdf classoption can end up with duplicaed options
-  const classoption = cleaned[kClassOption];
+  const classoption = metadata[kClassOption];
   if (Array.isArray(classoption)) {
-    cleaned[kClassOption] = ld.uniqBy(
+    metadata[kClassOption] = ld.uniqBy(
       classoption.reverse(),
       (option: string) => {
         return option.replace(/=.+$/, "");
@@ -1277,7 +1388,7 @@ function cleanupPandocMetadata(metadata: Metadata) {
     ).reverse();
   }
 
-  return cleaned;
+  return metadata;
 }
 
 async function resolveExtras(
@@ -1286,7 +1397,6 @@ async function resolveExtras(
   format: Format,
   inputDir: string,
   libDir: string,
-  temp: TempContext,
   dependenciesFile: string,
   project: ProjectContext,
 ) {
@@ -1304,7 +1414,6 @@ async function resolveExtras(
       inputDir,
       extras,
       format,
-      temp,
       project,
     );
 
@@ -1353,18 +1462,25 @@ async function resolveExtras(
     const ttf_urls = [], woff_urls: Array<string> = [];
     if (brand?.data.typography) {
       const fonts = brand.data.typography.fonts || [];
-      for (const font of fonts) {
-        if (font.source === "file") {
+      for (const _font of fonts) {
+        // if font lacks a source, we assume google in typst output
+
+        // deno-lint-ignore no-explicit-any
+        const source: string = (_font as any).source ?? "google";
+        if (source === "file") {
+          const font = _font as BrandFontFile;
           for (const file of font.files || []) {
             const path = typeof file === "object" ? file.path : file;
             fontdirs.add(dirname(join(brand.brandDir, path)));
           }
-        } else if (font.source === "bunny") {
+        } else if (source === "bunny") {
+          const font = _font as BrandFontBunny;
           console.log(
             "Font bunny is not yet supported for Typst, skipping",
             font.family,
           );
-        } else if (font.source === "google" /* || font.source === "bunny" */) {
+        } else if (source === "google" /* || font.source === "bunny" */) {
+          const font = _font as BrandFontGoogle;
           let { family, style, weight } = font;
           const parts = [family!];
           if (style) {
@@ -1376,7 +1492,7 @@ async function resolveExtras(
             parts.push(weight.join(","));
           }
           const response = await fetch(
-            `${base_urls[font.source]}?family=${parts.join(":")}`,
+            `${base_urls[source]}?family=${parts.join(":")}`,
           );
           const lines = (await response.text()).split("\n");
           for (const line of lines) {
@@ -1575,7 +1691,10 @@ function resolveTextHighlightStyle(
   extras: FormatExtras,
   pandoc: FormatPandoc,
 ): FormatExtras {
-  extras = ld.cloneDeep(extras);
+  extras = {
+    ...extras,
+    pandoc: extras.pandoc ? { ...extras.pandoc } : {},
+  } as FormatExtras;
 
   // Get the user selected theme or choose a default
   const highlightTheme = pandoc[kHighlightStyle] || kDefaultHighlightStyle;

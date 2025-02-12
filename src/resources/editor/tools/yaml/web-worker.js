@@ -8221,9 +8221,18 @@ try {
             tags: {
               engine: "knitr"
             },
-            schema: "boolean",
+            schema: {
+              enum: [
+                true,
+                false,
+                "NA"
+              ]
+            },
             default: true,
-            description: "Include messages in rendered output."
+            description: {
+              short: "Include messages in rendered output.",
+              long: "Include messages in rendered output. Possible values are `true`, `false`, or `NA`. \nIf `true`, messages are included in the output. If `false`, messages are not included. \nIf `NA`, messages are not included in output but shown in the knitr log to console.\n"
+            }
           },
           {
             name: "results",
@@ -8456,6 +8465,7 @@ try {
               "page",
               "page-left",
               "page-right",
+              "page-inset",
               "page-inset-left",
               "page-inset-right",
               "screen",
@@ -11831,6 +11841,11 @@ try {
                               description: "The brand's Mastodon URL."
                             }
                           },
+                          bluesky: {
+                            string: {
+                              description: "The brand's Bluesky URL."
+                            }
+                          },
                           github: {
                             string: {
                               description: "The brand's GitHub URL."
@@ -11912,6 +11927,7 @@ try {
               closed: true,
               properties: {
                 images: {
+                  description: "A dictionary of named logo resources.",
                   schema: {
                     object: {
                       additionalProperties: {
@@ -12096,23 +12112,23 @@ try {
                   ref: "brand-typography-options-base"
                 },
                 headings: {
-                  description: "Settings for headings\n",
+                  description: "Settings for headings, or a string specifying the font family only.",
                   ref: "brand-typography-options-headings"
                 },
                 monospace: {
-                  description: "Settings for monospace text\n",
+                  description: "Settings for monospace text, or a string specifying the font family only.",
                   ref: "brand-typography-options-monospace"
                 },
                 "monospace-inline": {
-                  description: "Settings for inline code",
+                  description: "Settings for inline code, or a string specifying the font family only.",
                   ref: "brand-typography-options-monospace-inline"
                 },
                 "monospace-block": {
-                  description: "Settings for code blocks",
+                  description: "Settings for code blocks, or a string specifying the font family only.",
                   ref: "brand-typography-options-monospace-block"
                 },
                 link: {
-                  description: "Settings for links",
+                  description: "Settings for links.",
                   ref: "brand-typography-options-link"
                 }
               }
@@ -12120,7 +12136,7 @@ try {
           },
           {
             id: "brand-typography-options-base",
-            description: "Typographic options.",
+            description: "Base typographic options.",
             anyOf: [
               "string",
               {
@@ -12132,9 +12148,6 @@ try {
                     weight: {
                       ref: "brand-font-weight"
                     },
-                    color: {
-                      ref: "brand-maybe-named-color"
-                    },
                     "line-height": {
                       ref: "line-height-number-string"
                     }
@@ -12145,7 +12158,7 @@ try {
           },
           {
             id: "brand-typography-options-headings",
-            description: "Typographic options without a font size.",
+            description: "Typographic options for headings.",
             anyOf: [
               "string",
               {
@@ -12304,6 +12317,9 @@ try {
               },
               {
                 ref: "brand-font-system"
+              },
+              {
+                ref: "brand-font-common"
               }
             ]
           },
@@ -12517,7 +12533,42 @@ try {
                   ref: "brand-typography"
                 },
                 defaults: {
+                  ref: "brand-defaults"
+                }
+              }
+            }
+          },
+          {
+            id: "brand-defaults",
+            object: {
+              properties: {
+                bootstrap: {
+                  ref: "brand-defaults-bootstrap"
+                },
+                quarto: {
                   schema: "object"
+                }
+              }
+            }
+          },
+          {
+            id: "brand-defaults-bootstrap",
+            object: {
+              properties: {
+                defaults: {
+                  schema: {
+                    object: {
+                      additionalProperties: {
+                        schema: {
+                          anyOf: [
+                            "string",
+                            "boolean",
+                            "number"
+                          ]
+                        }
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -15566,7 +15617,7 @@ try {
             schema: "number",
             description: {
               short: "Target page width for output (used to compute columns widths for `layout` divs)\n",
-              long: "Target page width for output (used to compute columns widths for `layout` divs).\nDefaults to 6.5 inches, which corresponds to default letter page settings in \ndocx and odt.\n"
+              long: "Target body page width for output (used to compute columns widths for `layout` divs).\nDefaults to 6.5 inches, which corresponds to default letter page settings in \ndocx and odt (8.5 inches with 1 inch for each margins).\n"
             }
           },
           {
@@ -16628,6 +16679,19 @@ try {
             },
             schema: "path",
             description: "Use the specified file as a style reference in producing a docx, \npptx, or odt file.\n"
+          },
+          {
+            name: "brand",
+            schema: {
+              anyOf: [
+                "string",
+                "boolean",
+                {
+                  ref: "brand"
+                }
+              ]
+            },
+            description: "Branding information to use for this document. If a string, the path to a brand file.\nIf false, don't use branding on this document. If an object, an inline brand\ndefinition.\n"
           },
           {
             name: "theme",
@@ -21588,7 +21652,7 @@ try {
           "Short/abbreviated form of container-title;",
           "A minor contributor to the item; typically cited using \u201Cwith\u201D before\nthe name when listed in a bibliography.",
           "Curator of an exhibit or collection (e.g.&nbsp;in a museum).",
-          "Physical (e.g.&nbsp;size) or temporal (e.g.&nbsp;running time) dimensions of\nthe item.",
+          "Physical (e.g.&nbsp;size) or temporal (e.g.\uFFFD\uFFFDrunning time) dimensions of\nthe item.",
           "Director (e.g.&nbsp;of a film).",
           "Minor subdivision of a court with a <code>jurisdiction</code> for a\nlegal item",
           "(Container) edition holding the item (e.g.&nbsp;\u201C3\u201D when citing a chapter\nin the third edition of a book).",
@@ -21760,6 +21824,7 @@ try {
           "Important links for the brand, including social media links. If a\nsingle string, it is the brand\u2019s home page or website. Additional fields\nare allowed for internal use.",
           "The brand\u2019s home page or website.",
           "The brand\u2019s Mastodon URL.",
+          "The brand\u2019s Bluesky URL.",
           "The brand\u2019s GitHub URL.",
           "The brand\u2019s LinkedIn URL.",
           "The brand\u2019s Twitter URL.",
@@ -21768,15 +21833,11 @@ try {
           "A link or path to the brand\u2019s dark-colored logo or icon.",
           "Alternative text for the logo, used for accessibility.",
           "Provide definitions and defaults for brand\u2019s logo in various formats\nand sizes.",
+          "A dictionary of named logo resources.",
           "A link or path to the brand\u2019s small-sized logo or icon, or a link or\npath to both the light and dark versions.",
           "A link or path to the brand\u2019s medium-sized logo, or a link or path to\nboth the light and dark versions.",
           "A link or path to the brand\u2019s large- or full-sized logo, or a link or\npath to both the light and dark versions.",
           "Names of customizeable logos",
-          "Source path or source path with layout options for logo",
-          "X-Y positioning of logo",
-          "Padding of logo",
-          "Width of logo",
-          "Source path of logo",
           "The brand\u2019s custom color palette and theme.",
           "The brand\u2019s custom color palette. Any number of colors can be\ndefined, each color having a custom name.",
           "The foreground color, used for text.",
@@ -21796,13 +21857,13 @@ try {
           "Typography definitions for the brand.",
           "Font files and definitions for the brand.",
           "The base font settings for the brand. These are used as the default\nfor all text.",
-          "Settings for headings",
-          "Settings for monospace text",
-          "Settings for inline code",
-          "Settings for code blocks",
-          "Settings for links",
-          "Typographic options.",
-          "Typographic options without a font size.",
+          "Settings for headings, or a string specifying the font family\nonly.",
+          "Settings for monospace text, or a string specifying the font family\nonly.",
+          "Settings for inline code, or a string specifying the font family\nonly.",
+          "Settings for code blocks, or a string specifying the font family\nonly.",
+          "Settings for links.",
+          "Base typographic options.",
+          "Typographic options for headings.",
           "Typographic options for monospace elements.",
           "Typographic options for inline monospace elements.",
           "Line height",
@@ -22026,7 +22087,10 @@ try {
             short: "Location of output relative to the code that generated it\n(<code>default</code>, <code>fragment</code>, <code>slide</code>,\n<code>column</code>, or <code>column-location</code>)",
             long: "Location of output relative to the code that generated it. The\npossible values are as follows:"
           },
-          "Include messages in rendered output.",
+          {
+            short: "Include messages in rendered output.",
+            long: "Include messages in rendered output. Possible values are\n<code>true</code>, <code>false</code>, or <code>NA</code>. If\n<code>true</code>, messages are included in the output. If\n<code>false</code>, messages are not included. If <code>NA</code>,\nmessages are not included in output but shown in the knitr log to\nconsole."
+          },
           {
             short: "How to display text results",
             long: "How to display text results. Note that this option only applies to\nnormal text output (not warnings, messages, or errors). The possible\nvalues are as follows:"
@@ -22624,7 +22688,7 @@ try {
           "The page layout to use for this document (<code>article</code>,\n<code>full</code>, or <code>custom</code>)",
           {
             short: "Target page width for output (used to compute columns widths for\n<code>layout</code> divs)",
-            long: "Target page width for output (used to compute columns widths for\n<code>layout</code> divs). Defaults to 6.5 inches, which corresponds to\ndefault letter page settings in docx and odt."
+            long: "Target body page width for output (used to compute columns widths for\n<code>layout</code> divs). Defaults to 6.5 inches, which corresponds to\ndefault letter page settings in docx and odt (8.5 inches with 1 inch for\neach margins)."
           },
           {
             short: "Properties of the grid system used to layout Quarto HTML pages.",
@@ -22802,6 +22866,7 @@ try {
           },
           "If <code>true</code>, force the presence of the OJS runtime. If\n<code>false</code>, force the absence instead. If unset, the OJS runtime\nis included only if OJS cells are present in the document.",
           "Use the specified file as a style reference in producing a docx,\npptx, or odt file.",
+          "Branding information to use for this document. If a string, the path\nto a brand file. If false, don\u2019t use branding on this document. If an\nobject, an inline brand definition.",
           "Theme name, theme scss file, or a mix of both.",
           "The light theme name, theme scss file, or a mix of both.",
           "The light theme name, theme scss file, or a mix of both.",
@@ -23552,6 +23617,14 @@ try {
           "Disambiguating year suffix in author-date styles (e.g.&nbsp;\u201Ca\u201D in \u201CDoe,\n1999a\u201D).",
           "Manuscript configuration",
           "internal-schema-hack",
+          {
+            short: "Include an automatically generated table of contents",
+            long: ""
+          },
+          {
+            short: "Use smart quotes in document output. Defaults to true.",
+            long: ""
+          },
           "Project configuration.",
           "Project type (<code>default</code>, <code>website</code>,\n<code>book</code>, or <code>manuscript</code>)",
           "Files to render (defaults to all files)",
@@ -24124,12 +24197,12 @@ try {
           mermaid: "%%"
         },
         "handlers/mermaid/schema.yml": {
-          _internalId: 192336,
+          _internalId: 194269,
           type: "object",
           description: "be an object",
           properties: {
             "mermaid-format": {
-              _internalId: 192328,
+              _internalId: 194261,
               type: "enum",
               enum: [
                 "png",
@@ -24145,7 +24218,7 @@ try {
               exhaustiveCompletions: true
             },
             theme: {
-              _internalId: 192335,
+              _internalId: 194268,
               type: "anyOf",
               anyOf: [
                 {
@@ -24185,7 +24258,42 @@ try {
             "case-detection": true
           },
           $id: "handlers/mermaid"
-        }
+        },
+        "schema/document-typst.yml": [
+          {
+            name: "page-numbering",
+            tags: {
+              formats: [
+                "typst"
+              ]
+            },
+            schema: {
+              anyOf: [
+                "string",
+                {
+                  enum: [
+                    false
+                  ]
+                }
+              ]
+            },
+            description: {
+              short: "Include an automatically generated table of contents"
+            }
+          },
+          {
+            name: "smart",
+            tags: {
+              formats: [
+                "typst"
+              ]
+            },
+            schema: "boolean",
+            description: {
+              short: "Use smart quotes in document output. Defaults to true."
+            }
+          }
+        ]
       };
     }
   });
@@ -24294,7 +24402,7 @@ try {
     try {
       return Deno.build.os !== "windows";
     } catch (_e) {
-      return false;
+      return true;
     }
   }
   function tidyverseInfo(msg) {
@@ -24723,8 +24831,8 @@ ${heading}`;
     };
   }
   function mappedLines(str2, keepNewLines = false) {
-    const lines2 = rangedLines(str2.value, keepNewLines);
-    return lines2.map((v) => mappedString(str2, [v.range]));
+    const lines3 = rangedLines(str2.value, keepNewLines);
+    return lines3.map((v) => mappedString(str2, [v.range]));
   }
 
   // parsing.ts
@@ -33524,9 +33632,7 @@ ${tidyverseInfo(
         } else if (cell_type === "directive") {
           cell.source = mappedString(src, mappedChunks.slice(1, -1), fileName);
         }
-        if (mdTrimEmptyLines(lines(cell.sourceVerbatim.value)).length > 0 || cell.options !== void 0) {
-          nb.cells.push(cell);
-        }
+        nb.cells.push(cell);
         lineBuffer.splice(0, lineBuffer.length);
       }
     };
@@ -33587,24 +33693,6 @@ ${tidyverseInfo(
     }
     await flushLineBuffer("markdown", srcLines.length);
     return nb;
-  }
-  function mdTrimEmptyLines(lines2) {
-    const firstNonEmpty = lines2.findIndex((line) => line.trim().length > 0);
-    if (firstNonEmpty === -1) {
-      return [];
-    }
-    lines2 = lines2.slice(firstNonEmpty);
-    let lastNonEmpty = -1;
-    for (let i = lines2.length - 1; i >= 0; i--) {
-      if (lines2[i].trim().length > 0) {
-        lastNonEmpty = i;
-        break;
-      }
-    }
-    if (lastNonEmpty > -1) {
-      lines2 = lines2.slice(0, lastNonEmpty + 1);
-    }
-    return lines2;
   }
 
   // ../yaml-schema/format-aliases.ts

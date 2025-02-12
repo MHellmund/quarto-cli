@@ -23,12 +23,12 @@ _quarto:
       -
         - 'font: \("EB Garamond",\),$'
         - 'fontsize: 12pt,$'
-        - '^#set text\(weight: 300, fill: rgb\("#27262e"\), \)$'
-
+        - '^#set text\(weight: 300, \)$'
+        - '^#set text\(fill: brand-color.foreground\)'
         - 'heading-family: \("Raleway",\),$'
         - 'heading-weight: 500,$'
         - 'heading-style: "normal",$'
-        - 'heading-color: unescape-eval\("rgb\(\\"\\#042f02\\"\)"\),$'
+        - 'heading-color: rgb\("#042f02"\),$'
         - 'heading-line-height: 0\.25em,$'
         - '^#show heading: set text\(font: "Raleway", weight: 500, style: "normal", fill: rgb\("#042f02"\), \)$'
         - '^#show heading: set par\(leading: 0.25em\)$'

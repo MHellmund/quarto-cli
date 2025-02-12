@@ -4,8 +4,8 @@
 * Copyright (C) 2020-2022 Posit Software, PBC
 *
 */
-import { existsSync } from "../src/deno_ral/fs.ts";
-import { fail } from "testing/asserts";
+import { existsSync, safeRemoveSync } from "../src/deno_ral/fs.ts";
+import { AssertionError, fail } from "testing/asserts";
 import { warning } from "../src/deno_ral/log.ts";
 import { initDenoDom } from "../src/core/deno-dom.ts";
 
@@ -16,6 +16,7 @@ import * as colors from "fmt/colors";
 import { runningInCI } from "../src/core/ci-info.ts";
 import { relative, fromFileUrl } from "../src/deno_ral/path.ts";
 import { quartoConfig } from "../src/core/quarto.ts";
+import { isWindows } from "../src/deno_ral/platform.ts";
 
 export interface TestDescriptor {
   // The name of the test
@@ -50,13 +51,53 @@ export interface TestContext {
   cwd?: () => string;
 
   // Control of underlying sanitizer
-  santize?: { resources?: boolean; ops?: boolean; exit?: boolean };
+  sanitize?: { resources?: boolean; ops?: boolean; exit?: boolean };
 
   // control if test is ran or skipped
   ignore?: boolean;
 
   // environment to pass to downstream processes
   env?: Record<string, string>;
+}
+
+// Allow to merge test contexts in Tests helpers
+export function mergeTestContexts(baseContext: TestContext, additionalContext?: TestContext): TestContext {
+  if (!additionalContext) {
+    return baseContext;
+  }
+
+  return {
+    // override name if provided
+    name: additionalContext.name || baseContext.name,
+    // combine prereq conditions
+    prereq: async () => {
+      const baseResult = !baseContext.prereq || await baseContext.prereq();
+      const additionalResult = !additionalContext.prereq || await additionalContext.prereq();
+      return baseResult && additionalResult;
+    },
+    // run teardowns in reverse order
+    teardown: async () => {
+      if (baseContext.teardown) await baseContext.teardown();
+      if (additionalContext.teardown) await additionalContext.teardown();
+    },
+    // run setups in order
+    setup: async () => {
+      if (additionalContext.setup) await additionalContext.setup();
+      if (baseContext.setup) await baseContext.setup();
+    },
+    // override cwd if provided
+    cwd: additionalContext.cwd || baseContext.cwd,
+    // merge sanitize options
+    sanitize: {
+      resources: additionalContext.sanitize?.resources ?? baseContext.sanitize?.resources,
+      ops: additionalContext.sanitize?.ops ?? baseContext.sanitize?.ops,
+      exit: additionalContext.sanitize?.exit ?? baseContext.sanitize?.exit,
+    },
+    // override ignore if provided
+    ignore: additionalContext.ignore ?? baseContext.ignore,
+    // merge env with additional context taking precedence
+    env: { ...baseContext.env, ...additionalContext.env },
+  };
 }
 
 export function testQuartoCmd(
@@ -113,7 +154,10 @@ export function unitTest(
       {
         name: `${name}`,
         verify: async (_outputs: ExecuteOutput[]) => {
-          await ver();
+          const timeout = new Promise((_resolve, reject) => {
+            setTimeout(() => reject(new AssertionError(`timed out after 2 minutes. Something may be wrong with verify function in the test '${name}'.`)), 120000);
+          });
+          await Promise.race([ver(), timeout]);
         },
       },
     ],
@@ -125,9 +169,9 @@ export function test(test: TestDescriptor) {
     ? `[${test.type}] > ${test.name} (${test.context.name})`
     : `[${test.type}] > ${test.name}`;
 
-  const sanitizeResources = test.context.santize?.resources;
-  const sanitizeOps = test.context.santize?.ops;
-  const sanitizeExit = test.context.santize?.exit;
+  const sanitizeResources = test.context.sanitize?.resources;
+  const sanitizeOps = test.context.sanitize?.ops;
+  const sanitizeExit = test.context.sanitize?.exit;
   const ignore = test.context.ignore;
   const userSession = !runningInCI();
 
@@ -206,7 +250,7 @@ export function test(test: TestDescriptor) {
           const offset = testName.indexOf(">");
 
           // Form the test runner command
-          const absPath = Deno.build.os === "windows"
+          const absPath = isWindows
             ? fromFileUrl(context.origin)
             : (new URL(context.origin)).pathname;
 
@@ -215,7 +259,7 @@ export function test(test: TestDescriptor) {
             join(quartoRoot, "tests"),
             absPath,
           );
-          const command = Deno.build.os === "windows"
+          const command = isWindows
             ? "run-tests.ps1"
             : "./run-tests.sh";
           const testCommand = `${
@@ -258,7 +302,7 @@ export function test(test: TestDescriptor) {
           }
           fail(output.join("\n"));
         } finally {
-          Deno.removeSync(log);
+          safeRemoveSync(log);
           await cleanupLogOnce();
           if (test.context.teardown) {
             await test.context.teardown();

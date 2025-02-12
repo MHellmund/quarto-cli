@@ -92,6 +92,8 @@ import { shortUuid } from "../../core/uuid.ts";
 import { isServerShinyPython } from "../../core/render.ts";
 import { pythonExec } from "../../core/jupyter/exec.ts";
 import { kTocIndent } from "../../config/constants.ts";
+import { isWindows } from "../../deno_ral/platform.ts";
+import { tinyTexBinDir } from "../../tools/impl/tinytex-info.ts";
 
 const kQuartoParams = "quarto-params";
 
@@ -101,8 +103,6 @@ const kFilterProjectOutputDir = "project-output-dir";
 const kMediabagDir = "mediabag-dir";
 
 const kResultsFile = "results-file";
-
-const kTimingFile = "timings-file";
 
 const kHasBootstrap = "has-bootstrap";
 
@@ -130,8 +130,7 @@ export async function filterParamsJson(
   filterParams: Record<string, unknown>,
   resultsFile: string,
   dependenciesFile: string,
-  timingFile: string,
-) {
+): Promise<Record<string, unknown>> {
   // extract include params (possibly mutating it's arguments)
   const includes = options.format.render[kMergeIncludes] !== false
     ? extractIncludeParams(
@@ -183,7 +182,6 @@ export async function filterParamsJson(
     ...customFormatParams,
     ...typstFilterParams,
     [kResultsFile]: pandocMetadataPath(resultsFile),
-    [kTimingFile]: pandocMetadataPath(timingFile),
     [kQuartoFilters]: filterSpec,
     [kActiveFilters]: {
       normalization: metadataNormalizationFilterActive(options),
@@ -197,13 +195,14 @@ export async function filterParamsJson(
     [kBrand]: options.format.render[kBrand],
     "quarto-environment": await quartoEnvironmentParams(options),
   };
-  return JSON.stringify(params);
+  return params;
 }
 
 async function quartoEnvironmentParams(_options: PandocOptions) {
   return {
     "paths": {
       "Rscript": await rBinaryPath("Rscript"),
+      "TinyTexBinDir": tinyTexBinDir(), // will be undefined if no tinytex found and quarto will look in PATH
     },
   };
 }
@@ -700,7 +699,7 @@ async function extensionShortcodes(options: PandocOptions) {
 
 function initFilterParams(dependenciesFile: string) {
   const params: Metadata = {};
-  if (Deno.build.os === "windows") {
+  if (isWindows) {
     const value = readCodePage();
     if (value) {
       debug("Windows: Using code page " + value);
@@ -714,6 +713,7 @@ function initFilterParams(dependenciesFile: string) {
 const kQuartoFilterMarker = "quarto";
 const kQuartoCiteProcMarker = "citeproc";
 
+// NB: this mutates `pandoc.citeproc`
 export async function resolveFilters(
   filters: QuartoFilter[],
   options: PandocOptions,

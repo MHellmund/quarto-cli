@@ -1192,9 +1192,18 @@
       "tags": {
         "engine": "knitr"
       },
-      "schema": "boolean",
+      "schema": {
+        "enum": [
+          true,
+          false,
+          "NA"
+        ]
+      },
       "default": true,
-      "description": "Include messages in rendered output."
+      "description": {
+        "short": "Include messages in rendered output.",
+        "long": "Include messages in rendered output. Possible values are `true`, `false`, or `NA`. \nIf `true`, messages are included in the output. If `false`, messages are not included. \nIf `NA`, messages are not included in output but shown in the knitr log to console.\n"
+      }
     },
     {
       "name": "results",
@@ -1427,6 +1436,7 @@
         "page",
         "page-left",
         "page-right",
+        "page-inset",
         "page-inset-left",
         "page-inset-right",
         "screen",
@@ -4802,6 +4812,11 @@
                         "description": "The brand's Mastodon URL."
                       }
                     },
+                    "bluesky": {
+                      "string": {
+                        "description": "The brand's Bluesky URL."
+                      }
+                    },
                     "github": {
                       "string": {
                         "description": "The brand's GitHub URL."
@@ -4883,6 +4898,7 @@
         "closed": true,
         "properties": {
           "images": {
+            "description": "A dictionary of named logo resources.",
             "schema": {
               "object": {
                 "additionalProperties": {
@@ -5067,23 +5083,23 @@
             "ref": "brand-typography-options-base"
           },
           "headings": {
-            "description": "Settings for headings\n",
+            "description": "Settings for headings, or a string specifying the font family only.",
             "ref": "brand-typography-options-headings"
           },
           "monospace": {
-            "description": "Settings for monospace text\n",
+            "description": "Settings for monospace text, or a string specifying the font family only.",
             "ref": "brand-typography-options-monospace"
           },
           "monospace-inline": {
-            "description": "Settings for inline code",
+            "description": "Settings for inline code, or a string specifying the font family only.",
             "ref": "brand-typography-options-monospace-inline"
           },
           "monospace-block": {
-            "description": "Settings for code blocks",
+            "description": "Settings for code blocks, or a string specifying the font family only.",
             "ref": "brand-typography-options-monospace-block"
           },
           "link": {
-            "description": "Settings for links",
+            "description": "Settings for links.",
             "ref": "brand-typography-options-link"
           }
         }
@@ -5091,7 +5107,7 @@
     },
     {
       "id": "brand-typography-options-base",
-      "description": "Typographic options.",
+      "description": "Base typographic options.",
       "anyOf": [
         "string",
         {
@@ -5103,9 +5119,6 @@
               "weight": {
                 "ref": "brand-font-weight"
               },
-              "color": {
-                "ref": "brand-maybe-named-color"
-              },
               "line-height": {
                 "ref": "line-height-number-string"
               }
@@ -5116,7 +5129,7 @@
     },
     {
       "id": "brand-typography-options-headings",
-      "description": "Typographic options without a font size.",
+      "description": "Typographic options for headings.",
       "anyOf": [
         "string",
         {
@@ -5275,6 +5288,9 @@
         },
         {
           "ref": "brand-font-system"
+        },
+        {
+          "ref": "brand-font-common"
         }
       ]
     },
@@ -5488,7 +5504,42 @@
             "ref": "brand-typography"
           },
           "defaults": {
+            "ref": "brand-defaults"
+          }
+        }
+      }
+    },
+    {
+      "id": "brand-defaults",
+      "object": {
+        "properties": {
+          "bootstrap": {
+            "ref": "brand-defaults-bootstrap"
+          },
+          "quarto": {
             "schema": "object"
+          }
+        }
+      }
+    },
+    {
+      "id": "brand-defaults-bootstrap",
+      "object": {
+        "properties": {
+          "defaults": {
+            "schema": {
+              "object": {
+                "additionalProperties": {
+                  "schema": {
+                    "anyOf": [
+                      "string",
+                      "boolean",
+                      "number"
+                    ]
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -8537,7 +8588,7 @@
       "schema": "number",
       "description": {
         "short": "Target page width for output (used to compute columns widths for `layout` divs)\n",
-        "long": "Target page width for output (used to compute columns widths for `layout` divs).\nDefaults to 6.5 inches, which corresponds to default letter page settings in \ndocx and odt.\n"
+        "long": "Target body page width for output (used to compute columns widths for `layout` divs).\nDefaults to 6.5 inches, which corresponds to default letter page settings in \ndocx and odt (8.5 inches with 1 inch for each margins).\n"
       }
     },
     {
@@ -9599,6 +9650,19 @@
       },
       "schema": "path",
       "description": "Use the specified file as a style reference in producing a docx, \npptx, or odt file.\n"
+    },
+    {
+      "name": "brand",
+      "schema": {
+        "anyOf": [
+          "string",
+          "boolean",
+          {
+            "ref": "brand"
+          }
+        ]
+      },
+      "description": "Branding information to use for this document. If a string, the path to a brand file.\nIf false, don't use branding on this document. If an object, an inline brand\ndefinition.\n"
     },
     {
       "name": "theme",
@@ -14559,7 +14623,7 @@
     "Short/abbreviated form of container-title;",
     "A minor contributor to the item; typically cited using “with” before\nthe name when listed in a bibliography.",
     "Curator of an exhibit or collection (e.g.&nbsp;in a museum).",
-    "Physical (e.g.&nbsp;size) or temporal (e.g.&nbsp;running time) dimensions of\nthe item.",
+    "Physical (e.g.&nbsp;size) or temporal (e.g.��running time) dimensions of\nthe item.",
     "Director (e.g.&nbsp;of a film).",
     "Minor subdivision of a court with a <code>jurisdiction</code> for a\nlegal item",
     "(Container) edition holding the item (e.g.&nbsp;“3” when citing a chapter\nin the third edition of a book).",
@@ -14731,6 +14795,7 @@
     "Important links for the brand, including social media links. If a\nsingle string, it is the brand’s home page or website. Additional fields\nare allowed for internal use.",
     "The brand’s home page or website.",
     "The brand’s Mastodon URL.",
+    "The brand’s Bluesky URL.",
     "The brand’s GitHub URL.",
     "The brand’s LinkedIn URL.",
     "The brand’s Twitter URL.",
@@ -14739,15 +14804,11 @@
     "A link or path to the brand’s dark-colored logo or icon.",
     "Alternative text for the logo, used for accessibility.",
     "Provide definitions and defaults for brand’s logo in various formats\nand sizes.",
+    "A dictionary of named logo resources.",
     "A link or path to the brand’s small-sized logo or icon, or a link or\npath to both the light and dark versions.",
     "A link or path to the brand’s medium-sized logo, or a link or path to\nboth the light and dark versions.",
     "A link or path to the brand’s large- or full-sized logo, or a link or\npath to both the light and dark versions.",
     "Names of customizeable logos",
-    "Source path or source path with layout options for logo",
-    "X-Y positioning of logo",
-    "Padding of logo",
-    "Width of logo",
-    "Source path of logo",
     "The brand’s custom color palette and theme.",
     "The brand’s custom color palette. Any number of colors can be\ndefined, each color having a custom name.",
     "The foreground color, used for text.",
@@ -14767,13 +14828,13 @@
     "Typography definitions for the brand.",
     "Font files and definitions for the brand.",
     "The base font settings for the brand. These are used as the default\nfor all text.",
-    "Settings for headings",
-    "Settings for monospace text",
-    "Settings for inline code",
-    "Settings for code blocks",
-    "Settings for links",
-    "Typographic options.",
-    "Typographic options without a font size.",
+    "Settings for headings, or a string specifying the font family\nonly.",
+    "Settings for monospace text, or a string specifying the font family\nonly.",
+    "Settings for inline code, or a string specifying the font family\nonly.",
+    "Settings for code blocks, or a string specifying the font family\nonly.",
+    "Settings for links.",
+    "Base typographic options.",
+    "Typographic options for headings.",
     "Typographic options for monospace elements.",
     "Typographic options for inline monospace elements.",
     "Line height",
@@ -14997,7 +15058,10 @@
       "short": "Location of output relative to the code that generated it\n(<code>default</code>, <code>fragment</code>, <code>slide</code>,\n<code>column</code>, or <code>column-location</code>)",
       "long": "Location of output relative to the code that generated it. The\npossible values are as follows:"
     },
-    "Include messages in rendered output.",
+    {
+      "short": "Include messages in rendered output.",
+      "long": "Include messages in rendered output. Possible values are\n<code>true</code>, <code>false</code>, or <code>NA</code>. If\n<code>true</code>, messages are included in the output. If\n<code>false</code>, messages are not included. If <code>NA</code>,\nmessages are not included in output but shown in the knitr log to\nconsole."
+    },
     {
       "short": "How to display text results",
       "long": "How to display text results. Note that this option only applies to\nnormal text output (not warnings, messages, or errors). The possible\nvalues are as follows:"
@@ -15595,7 +15659,7 @@
     "The page layout to use for this document (<code>article</code>,\n<code>full</code>, or <code>custom</code>)",
     {
       "short": "Target page width for output (used to compute columns widths for\n<code>layout</code> divs)",
-      "long": "Target page width for output (used to compute columns widths for\n<code>layout</code> divs). Defaults to 6.5 inches, which corresponds to\ndefault letter page settings in docx and odt."
+      "long": "Target body page width for output (used to compute columns widths for\n<code>layout</code> divs). Defaults to 6.5 inches, which corresponds to\ndefault letter page settings in docx and odt (8.5 inches with 1 inch for\neach margins)."
     },
     {
       "short": "Properties of the grid system used to layout Quarto HTML pages.",
@@ -15773,6 +15837,7 @@
     },
     "If <code>true</code>, force the presence of the OJS runtime. If\n<code>false</code>, force the absence instead. If unset, the OJS runtime\nis included only if OJS cells are present in the document.",
     "Use the specified file as a style reference in producing a docx,\npptx, or odt file.",
+    "Branding information to use for this document. If a string, the path\nto a brand file. If false, don’t use branding on this document. If an\nobject, an inline brand definition.",
     "Theme name, theme scss file, or a mix of both.",
     "The light theme name, theme scss file, or a mix of both.",
     "The light theme name, theme scss file, or a mix of both.",
@@ -16523,6 +16588,14 @@
     "Disambiguating year suffix in author-date styles (e.g.&nbsp;“a” in “Doe,\n1999a”).",
     "Manuscript configuration",
     "internal-schema-hack",
+    {
+      "short": "Include an automatically generated table of contents",
+      "long": ""
+    },
+    {
+      "short": "Use smart quotes in document output. Defaults to true.",
+      "long": ""
+    },
     "Project configuration.",
     "Project type (<code>default</code>, <code>website</code>,\n<code>book</code>, or <code>manuscript</code>)",
     "Files to render (defaults to all files)",
@@ -17095,12 +17168,12 @@
     "mermaid": "%%"
   },
   "handlers/mermaid/schema.yml": {
-    "_internalId": 192336,
+    "_internalId": 194269,
     "type": "object",
     "description": "be an object",
     "properties": {
       "mermaid-format": {
-        "_internalId": 192328,
+        "_internalId": 194261,
         "type": "enum",
         "enum": [
           "png",
@@ -17116,7 +17189,7 @@
         "exhaustiveCompletions": true
       },
       "theme": {
-        "_internalId": 192335,
+        "_internalId": 194268,
         "type": "anyOf",
         "anyOf": [
           {
@@ -17156,5 +17229,40 @@
       "case-detection": true
     },
     "$id": "handlers/mermaid"
-  }
+  },
+  "schema/document-typst.yml": [
+    {
+      "name": "page-numbering",
+      "tags": {
+        "formats": [
+          "typst"
+        ]
+      },
+      "schema": {
+        "anyOf": [
+          "string",
+          {
+            "enum": [
+              false
+            ]
+          }
+        ]
+      },
+      "description": {
+        "short": "Include an automatically generated table of contents"
+      }
+    },
+    {
+      "name": "smart",
+      "tags": {
+        "formats": [
+          "typst"
+        ]
+      },
+      "schema": "boolean",
+      "description": {
+        "short": "Use smart quotes in document output. Defaults to true."
+      }
+    }
+  ]
 }

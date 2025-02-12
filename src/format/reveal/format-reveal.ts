@@ -212,7 +212,6 @@ export function revealjsFormat() {
           format,
           input,
           libDir,
-          services.temp,
           project,
         );
 
@@ -285,7 +284,6 @@ export function revealjsFormat() {
             metadataOverride,
             templateContext,
             [kIncludeInHeader]: [
-              formatResourcePath("html", "styles-callout.html"),
               stylesFile,
             ],
             html: {
@@ -379,8 +377,9 @@ export function revealjsFormat() {
 const determineRevealLogo = (format: Format): string | undefined => {
   const brandData = format.render.brand?.processedData;
   if (brandData?.logo) {
+    const keys: ("medium" | "small" | "large")[] = ["medium", "small", "large"];
     // add slide logo if we have one
-    for (const size of ["medium", "small", "large"]) {
+    for (const size of keys) {
       const logoInfo = brandData.logo[size];
       if (!logoInfo) {
         continue;
@@ -398,8 +397,25 @@ const determineRevealLogo = (format: Format): string | undefined => {
 function revealMarkdownAfterBody(format: Format) {
   const lines: string[] = [];
   lines.push("::: {.quarto-auto-generated-content style='display: none;'}\n");
-  const revealLogo = (format.metadata[kSlideLogo] as (string | undefined)) ??
-    determineRevealLogo(format);
+  let revealLogo = format
+    .metadata[kSlideLogo] as (string | { path: string } | undefined);
+  if (revealLogo) {
+    if (typeof revealLogo === "object") {
+      revealLogo = revealLogo.path;
+    }
+    if (["small", "medium", "large"].includes(revealLogo)) {
+      const brandData = format.render.brand?.processedData;
+      const logoInfo = brandData?.logo
+        ?.[revealLogo as ("medium" | "small" | "large")];
+      if (typeof logoInfo === "string") {
+        revealLogo = logoInfo;
+      } else {
+        revealLogo = logoInfo?.light.path ?? logoInfo?.dark.path;
+      }
+    }
+  } else {
+    revealLogo = determineRevealLogo(format);
+  }
   if (revealLogo) {
     lines.push(
       `<img src="${revealLogo}" class="slide-logo" />`,
@@ -581,12 +597,12 @@ const handleInvisibleSlides = (doc: Document) => {
 const handleUntitledSlidesInToc = (doc: Document) => {
   // remove from toc all slides that have no title
   const tocEntries = Array.from(doc.querySelectorAll(
-    'nav[role="doc-toc"] a[href^="#/"]',
+    'nav[role="doc-toc"] ul > li',
   ));
   for (const tocEntry of tocEntries) {
     const tocEntryEl = tocEntry as Element;
     if (tocEntryEl.textContent.trim() === "") {
-      tocEntryEl.parentElement?.remove();
+      tocEntryEl.remove();
     }
   }
 };
