@@ -75,6 +75,7 @@ import {
   kVariant,
   kWarning,
   kWrap,
+  kPreserveANSI,
 } from "../config/constants.ts";
 
 import { Format } from "../config/types.ts";
@@ -225,6 +226,7 @@ function defaultFormat(displayName: string): Format {
       [kIpynbFilters]: [],
       [kIpynbShellInteractivity]: null,
       [kPlotlyConnected]: true,
+      [kPreserveANSI]: false,
     },
     render: {
       [kKeepTex]: false,

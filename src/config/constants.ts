@@ -142,6 +142,8 @@ export const kCssPropertyProcessing = "css-property-processing";
 export const kUseRsvgConvert = "use-rsvg-convert";
 export const kValidateYaml = "validate-yaml";
 
+export const kPreserveANSI = "preserve-ansi";
+
 export const kIdentifierDefaultsKeys = [
   kTargetFormat,
   kDisplayName,

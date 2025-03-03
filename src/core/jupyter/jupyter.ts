@@ -122,6 +122,7 @@ import {
   kTblCapLoc,
   kTblColwidths,
   kWarning,
+  kPreserveANSI,
 } from "../../config/constants.ts";
 import {
   isJupyterKernelspec,
@@ -1785,7 +1786,7 @@ async function mdOutputStream(output: JupyterOutputStream, options: JupyterToMar
     }
   }
 
-  if (options.toHtml && text.some(hasAnsiEscapeCodes)) {
+  if (options.toHtml && text.some(hasAnsiEscapeCodes) && !options.execute[kPreserveANSI]) {
     const linesHTML = await convertToHtmlSpans(text.join("\n"));
     return mdMarkdownOutput(
       [
@@ -1796,7 +1797,11 @@ async function mdOutputStream(output: JupyterOutputStream, options: JupyterToMar
     );
   } else {
     // normal default behavior
-    return mdCodeOutput(text.map(colors.stripColor));
+    if (options.execute[kPreserveANSI]) {
+       return mdCodeOutput(text);
+    } else {
+       return mdCodeOutput(text.map(colors.stripColor));
+    }
   }
 }
 
@@ -1805,6 +1810,9 @@ async function mdOutputError(
   options: JupyterToMarkdownOptions,
 ) {
   const traceback = output.traceback.join("\n");
+  if (options.execute[kPreserveANSI]) {
+     return mdCodeOutput([traceback]);
+  }
   if (
     !options.toHtml ||
     (!hasAnsiEscapeCodes(output.evalue) && !hasAnsiEscapeCodes(traceback))
@@ -1886,6 +1894,9 @@ which does not appear to be plain text: ${JSON.stringify(data)}`, options);
         lines[0] = lines[0].slice(1, -1);
         return mdMarkdownOutput(lines);
       } else {
+        if (options.execute[kPreserveANSI]) {
+           return mdCodeOutput(lines);
+        }
         if (options.toHtml) {
           if (lines.some(hasAnsiEscapeCodes)) {
             const html = await Promise.all(
