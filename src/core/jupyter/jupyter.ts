@@ -1841,7 +1841,7 @@ async function mdOutputStream(
     if (options.execute[kPreserveANSI]) {
        return mdCodeOutput(text);
     } else {
-       return mdCodeOutput(text.map(colors.stripColor));
+       return mdCodeOutput(text.map(colors.stripAnsiCode));
     }
   }
 }
