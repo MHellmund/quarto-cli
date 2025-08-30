@@ -69,6 +69,8 @@ import { ExecutionEngine, kMarkdownEngine } from "../execute/types.ts";
 import { projectResourceFiles } from "./project-resources.ts";
 
 import {
+  cleanupFileInformationCache,
+  FileInformationCacheMap,
   ignoreFieldsForProjectType,
   normalizeFormatYaml,
   projectConfigFile,
@@ -101,7 +103,36 @@ import { NotebookContext } from "../render/notebook/notebook-types.ts";
 import { MappedString } from "../core/mapped-text.ts";
 import { makeTimedFunctionAsync } from "../core/performance/function-times.ts";
 import { createProjectCache } from "../core/cache/cache.ts";
-import { createTempContext, globalTempContext } from "../core/temp.ts";
+import { createTempContext } from "../core/temp.ts";
+
+import { onCleanup } from "../core/cleanup.ts";
+import { once } from "../core/once.ts";
+import { Zod } from "../resources/types/zod/schema-types.ts";
+
+const mergeExtensionMetadata = async (
+  context: ProjectContext,
+  pOptions: RenderOptions,
+) => {
+  // this will mutate context.config.project to merge
+  // in any project metadata from extensions
+  if (context.config) {
+    const extensions = await pOptions.services.extension.extensions(
+      undefined,
+      context.config,
+      context.isSingleFile ? undefined : context.dir,
+      { builtIn: false },
+    );
+    const projectMetadata = extensions.filter((extension) =>
+      extension.contributes.metadata?.project
+    ).map((extension) => {
+      return Zod.ProjectConfig.parse(extension.contributes.metadata!.project);
+    });
+    context.config.project = mergeProjectMetadata(
+      context.config.project,
+      ...projectMetadata,
+    );
+  }
+};
 
 export async function projectContext(
   path: string,
@@ -138,6 +169,16 @@ export async function projectContext(
       cachedEnv = await computeProjectEnvironment(notebookContext, project);
       return cachedEnv;
     }
+  };
+
+  const returnResult = async (
+    context: ProjectContext,
+  ) => {
+    if (renderOptions) {
+      await mergeExtensionMetadata(context, renderOptions);
+    }
+    onCleanup(context.cleanup);
+    return context;
   };
 
   while (true) {
@@ -265,9 +306,12 @@ export async function projectContext(
         }
 
         const temp = createTempContext({
-          dir: join(dir, ".quarto", "temp"),
+          dir: join(dir, ".quarto"),
+          prefix: "quarto-session-temp",
         });
+        const fileInformationCache = new FileInformationCacheMap();
         const result: ProjectContext = {
+          clone: () => result,
           resolveBrand: async (fileName?: string) =>
             projectResolveBrand(result, fileName),
           resolveFullMarkdownForFile: (
@@ -286,7 +330,7 @@ export async function projectContext(
           },
           dir,
           engines: [],
-          fileInformationCache: new Map(),
+          fileInformationCache,
           files: {
             input: [],
           },
@@ -311,9 +355,11 @@ export async function projectContext(
           isSingleFile: false,
           diskCache: await createProjectCache(join(dir, ".quarto")),
           temp,
-          cleanup: () => {
+          cleanup: once(() => {
+            cleanupFileInformationCache(result);
             result.diskCache.close();
-          },
+            temp.cleanup();
+          }),
         };
 
         // see if the project [kProjectType] wants to filter the project config
@@ -352,14 +398,16 @@ export async function projectContext(
           config: configFiles,
           configResources: projectConfigResources(dir, projectConfig, type),
         };
-
-        return result;
+        return await returnResult(result);
       } else {
         debug(`projectContext: Found Quarto project in ${dir}`);
         const temp = createTempContext({
-          dir: join(dir, ".quarto", "temp"),
+          dir: join(dir, ".quarto"),
+          prefix: "quarto-session-temp",
         });
+        const fileInformationCache = new FileInformationCacheMap();
         const result: ProjectContext = {
+          clone: () => result,
           resolveBrand: async (fileName?: string) =>
             projectResolveBrand(result, fileName),
           resolveFullMarkdownForFile: (
@@ -379,7 +427,7 @@ export async function projectContext(
           dir,
           config: projectConfig,
           engines: [],
-          fileInformationCache: new Map(),
+          fileInformationCache,
           files: {
             input: [],
           },
@@ -401,9 +449,11 @@ export async function projectContext(
           isSingleFile: false,
           diskCache: await createProjectCache(join(dir, ".quarto")),
           temp,
-          cleanup: () => {
+          cleanup: once(() => {
+            cleanupFileInformationCache(result);
             result.diskCache.close();
-          },
+            temp.cleanup();
+          }),
         };
         const { files, engines } = await projectInputFiles(
           result,
@@ -416,7 +466,7 @@ export async function projectContext(
           config: configFiles,
           configResources: projectConfigResources(dir, projectConfig),
         };
-        return result;
+        return await returnResult(result);
       }
     } else {
       const nextDir = dirname(dir);
@@ -426,8 +476,13 @@ export async function projectContext(
           dir = originalDir;
           configResolvers.shift();
         } else if (force) {
-          const temp = globalTempContext();
+          const temp = createTempContext({
+            dir: join(originalDir, ".quarto"),
+            prefix: "quarto-session-temp",
+          });
+          const fileInformationCache = new FileInformationCacheMap();
           const context: ProjectContext = {
+            clone: () => context,
             resolveBrand: async (fileName?: string) =>
               projectResolveBrand(context, fileName),
             resolveFullMarkdownForFile: (
@@ -451,7 +506,7 @@ export async function projectContext(
                 [kProjectOutputDir]: flags?.outputDir,
               },
             },
-            fileInformationCache: new Map(),
+            fileInformationCache,
             files: {
               input: [],
             },
@@ -473,9 +528,11 @@ export async function projectContext(
             isSingleFile: false,
             diskCache: await createProjectCache(join(temp.baseDir, ".quarto")),
             temp,
-            cleanup: () => {
+            cleanup: once(() => {
+              cleanupFileInformationCache(context);
               context.diskCache.close();
-            },
+              temp.cleanup();
+            }),
           };
           if (Deno.statSync(path).isDirectory) {
             const { files, engines } = await projectInputFiles(context);
@@ -488,7 +545,7 @@ export async function projectContext(
             context.files.input = [input];
           }
           debug(`projectContext: Found Quarto project in ${originalDir}`);
-          return context;
+          return await returnResult(context);
         } else {
           return undefined;
         }

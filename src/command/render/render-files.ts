@@ -48,7 +48,7 @@ import { outputRecipe } from "./output.ts";
 
 import { renderPandoc } from "./render.ts";
 import { PandocRenderCompletion, RenderServices } from "./types.ts";
-import { copyRenderContext, renderContexts } from "./render-contexts.ts";
+import { renderContexts } from "./render-contexts.ts";
 import { renderProgress } from "./render-info.ts";
 import {
   ExecutedFile,
@@ -114,6 +114,8 @@ import {
 } from "../../project/project-shared.ts";
 import { NotebookContext } from "../../render/notebook/notebook-types.ts";
 import { setExecuteEnvironment } from "../../execute/environment.ts";
+import { safeCloneDeep } from "../../core/safe-clone-deep.ts";
+import { warn } from "log";
 
 export async function renderExecute(
   context: RenderContext,
@@ -198,7 +200,11 @@ export async function renderExecute(
 
         // notify engine that we skipped execute
         if (context.engine.executeTargetSkipped) {
-          context.engine.executeTargetSkipped(context.target, context.format);
+          context.engine.executeTargetSkipped(
+            context.target,
+            context.format,
+            context.project,
+          );
         }
 
         // return results
@@ -345,6 +351,10 @@ export async function renderFiles(
 
     return await pandocRenderer.onComplete(false, options.flags?.quiet);
   } catch (error) {
+    if (!(error instanceof Error)) {
+      warn("Should not have arrived here:", error);
+      throw error;
+    }
     return {
       files: (await pandocRenderer.onComplete(true)).files,
       error: error || new Error(),
@@ -398,6 +408,10 @@ export async function renderFile(
     }
     return await pandocRenderer.onComplete(false, options.flags?.quiet);
   } catch (error) {
+    if (!(error instanceof Error)) {
+      warn("Should not have arrived here:", error);
+      throw error;
+    }
     return {
       files: (await pandocRenderer.onComplete(true)).files,
       error: error || new Error(),
@@ -503,7 +517,7 @@ async function renderFileInternal(
 
   for (const format of Object.keys(contexts)) {
     pushTiming("render-context");
-    const context = copyRenderContext(contexts[format]); // since we're going to mutate it...
+    const context = safeCloneDeep(contexts[format]); // since we're going to mutate it...
 
     // disquality some documents from server: shiny
     if (isServerShiny(context.format) && context.project) {

@@ -64,7 +64,7 @@ function quarto_ast_pipeline()
         local jin = assert(io.open(juice_in, 'w'))
         jin:write(htmltext)
         jin:flush()
-        local quarto_path = pandoc.path.join({os.getenv('QUARTO_BIN_PATH'), 'quarto'})
+        local quarto_path = quarto.config.cli_path()
         local jout, jerr = io.popen(quarto_path .. ' run ' ..
             pandoc.path.join({os.getenv('QUARTO_SHARE_PATH'), 'scripts', 'juice.ts'}) .. ' ' ..
             juice_in, 'r')
@@ -112,6 +112,9 @@ function quarto_ast_pipeline()
     end
     local function handle_raw_html_as_table(el)
       local eltext
+      -- trim leading and trailing spaces
+      el.text = el.text:gsub("^%s*(.-)%s*$", "%1")
+
       if(_quarto.format.isTypstOutput()) then
         eltext = juice(el.text)
       else

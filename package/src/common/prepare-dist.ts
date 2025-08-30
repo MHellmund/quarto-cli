@@ -12,7 +12,7 @@ import { Configuration } from "../common/config.ts";
 import { buildFilter } from "./package-filters.ts";
 import { bundle } from "../util/deno.ts";
 import { info } from "../../../src/deno_ral/log.ts";
-import { buildAssets } from "../../../src/command/build-js/cmd.ts";
+import { buildAssets } from "../../../src/command/dev-call/build-artifacts/cmd.ts";
 import { initTreeSitter } from "../../../src/core/schema/deno-init-tree-sitter.ts";
 import {
 Dependency,
@@ -21,7 +21,7 @@ Dependency,
 } from "./dependencies/dependencies.ts";
 import { copyQuartoScript } from "./configure.ts";
 import { deno } from "./dependencies/deno.ts";
-import { buildQuartoPreviewJs } from "../../../src/core/previewjs.ts";
+import { buildQuartoPreviewJs } from "./previewjs.ts";
 
 export async function prepareDist(
   config: Configuration,
@@ -29,9 +29,6 @@ export async function prepareDist(
   // run esbuild
   // copy from resources dir to the 'share' dir (which is resources)
   //   config.directoryInfo.share
-
-  // FIXME holding off on prepareDist building assets until we fix
-  // this issue: https://github.com/quarto-dev/quarto-cli/runs/4229822735?check_suite_focus=true
 
   // Moving appropriate binaries into place
 
@@ -90,6 +87,7 @@ export async function prepareDist(
     try {
       await configArchDependency(dependency, targetDir, config)
     } catch (e) {
+      if (!(e instanceof Error)) { throw e; }
       if (
         e.message ===
           "The architecture aarch64 is missing the dependency deno_dom"
@@ -121,13 +119,11 @@ export async function prepareDist(
   info("");
 
   // Create the deno bundle
-  const input = join(config.directoryInfo.src, "quarto.ts");
+  // const input = join(config.directoryInfo.src, "quarto.ts");
   const output = join(config.directoryInfo.pkgWorking.bin, "quarto.js");
   info("\nCreating Deno Bundle");
   info(output);
   await bundle(
-    input,
-    output,
     config,
   );
   info("");
@@ -172,9 +168,7 @@ export async function prepareDist(
   const configDir = join(config.directoryInfo.dist, "config");
   info(configDir);
   if (existsSync(configDir)) {
-    Deno.removeSync(configDir, {
-      recursive: true,
-    });
+    Deno.removeSync(configDir, { recursive: true });
   }
 
   info("");
@@ -195,10 +189,6 @@ function supportingFiles(config: Configuration) {
       from: join(config.directoryInfo.src, "resources"),
       to: config.directoryInfo.pkgWorking.share,
     },
-    {
-      from: join(config.directoryInfo.src, "resources", "vendor"),
-      to: join(config.directoryInfo.pkgWorking.bin, "vendor"),
-    },
   ];
 
   // Gather supporting files
@@ -215,7 +205,6 @@ function supportingFiles(config: Configuration) {
   // compiled later
   const pathsToClean = [
     join(config.directoryInfo.pkgWorking.share, "filters"),
-    join(config.directoryInfo.pkgWorking.share, "vendor"),
   ];
   pathsToClean.forEach((path) => Deno.removeSync(path, { recursive: true }));
 }

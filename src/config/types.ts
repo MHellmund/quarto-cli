@@ -58,6 +58,7 @@ import {
   kCrossrefThmTitle,
   kCss,
   kCssPropertyProcessing,
+  kDark,
   kDfPrint,
   kDisplayName,
   kDownloadUrl,
@@ -123,6 +124,7 @@ import {
   kLatexTlmgrOpts,
   kLaunchBinderTitle,
   kLaunchDevContainerTitle,
+  kLight,
   kLinkExternalFilter,
   kLinkExternalIcon,
   kLinkExternalNewwindow,
@@ -454,6 +456,11 @@ export interface Format {
   extensions?: Record<string, unknown>;
 }
 
+export interface LightDarkBrand {
+  [kLight]?: Brand;
+  [kDark]?: Brand;
+}
+
 export interface FormatRender {
   [kKeepTex]?: boolean;
   [kKeepTyp]?: boolean;
@@ -515,7 +522,7 @@ export interface FormatRender {
   [kValidateYaml]?: boolean;
   [kCanonicalUrl]?: boolean | string;
   [kBodyClasses]?: string;
-  [kBrand]?: Brand;
+  [kBrand]?: LightDarkBrand;
 }
 
 export interface FormatExecute {

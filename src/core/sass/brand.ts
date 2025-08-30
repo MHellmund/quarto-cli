@@ -16,12 +16,17 @@ import {
 import { ProjectContext } from "../../project/types.ts";
 import {
   BrandFont,
-  BrandFontBunny,
+  // BrandFontBunny,
   BrandFontCommon,
+  BrandFontFile,
   BrandFontGoogle,
   BrandFontWeight,
-} from "../../resources/types/schema-types.ts";
+  Zod,
+} from "../../resources/types/zod/schema-types.ts";
 import { Brand } from "../brand/brand.ts";
+import { darkModeDefault } from "../../format/html/format-html-info.ts";
+import { kBrandMode } from "../../config/constants.ts";
+import { join, relative } from "../../deno_ral/path.ts";
 
 const defaultColorNameMap: Record<string, string> = {
   "link-color": "link",
@@ -75,7 +80,10 @@ export async function brandBootstrapSassBundles(
   return [{
     key,
     dependency: "bootstrap",
-    user: layers,
+    user: layers.light,
+    dark: {
+      user: layers.dark,
+    },
   }];
 }
 
@@ -143,6 +151,28 @@ const googleFontImportString = (description: BrandFontGoogle) => {
   }:${styleString}wght@${weights}&display=${display}');`;
 };
 
+const fileFontImportString = (brand: Brand, description: BrandFontFile) => {
+  const pathPrefix = relative(brand.projectDir, brand.brandDir);
+  const parts = [];
+  for (const file of description.files) {
+    let path, weight, style;
+    if (typeof file === "string") {
+      path = file;
+    } else {
+      path = file.path;
+      weight = file.weight;
+      style = file.style;
+    }
+    parts.push(`@font-face {
+    font-family: '${description.family}';
+    src: url('${join(pathPrefix, path).replace(/\\/g, '/')}');
+    font-weight: ${weight || "normal"};
+    font-style: ${style || "normal"};
+}\n`);
+  }
+  return parts.join("\n");
+};
+
 const brandColorLayer = (
   brand: Brand,
   nameMap: Record<string, string>,
@@ -180,7 +210,7 @@ const brandColorLayer = (
 
   // format-specific name mapping
   for (const [key, value] of Object.entries(nameMap)) {
-    const resolvedValue = brand.getColor(value);
+    const resolvedValue = brand.getColor(value, true);
     if (resolvedValue !== value) {
       colorVariables.push(
         `$${key}: ${resolvedValue} !default;`,
@@ -319,10 +349,11 @@ const brandTypographyLayer = (
   ): string | undefined => {
     let googleFamily = "";
     for (const _resolvedFont of font) {
-      const resolvedFont = _resolvedFont as (BrandFontGoogle | BrandFontBunny);
-      if (resolvedFont.source !== "google") {
+      const safeResolvedFont = Zod.BrandFontGoogle.safeParse(_resolvedFont);
+      if (!safeResolvedFont.success) {
         return undefined;
       }
+      const resolvedFont = safeResolvedFont.data;
       const thisFamily = resolvedFont.family;
       if (!thisFamily) {
         continue;
@@ -345,41 +376,70 @@ const brandTypographyLayer = (
   const resolveBunnyFontFamily = (
     font: BrandFont[],
   ): string | undefined => {
-    let googleFamily = "";
+    let bunnyFamily = "";
     for (const _resolvedFont of font) {
-      const resolvedFont =
-        _resolvedFont as (BrandFont | BrandFontGoogle | BrandFontBunny);
+      const safeResolvedFont = Zod.BrandFontBunny.safeParse(_resolvedFont);
+      if (!safeResolvedFont.success) {
+        return undefined;
+      }
+      const resolvedFont = safeResolvedFont.data;
       // Typescript's type checker doesn't understand that it's ok to attempt
       // to access a property that might not exist on a type when you're
       // only testing for its existence.
 
-      // deno-lint-ignore no-explicit-any
-      const source = (resolvedFont as any).source;
-      if (source && source !== "bunny") {
-        return undefined;
-      }
       const thisFamily = resolvedFont.family;
       if (!thisFamily) {
         continue;
       }
-      if (googleFamily === "") {
-        googleFamily = thisFamily;
-      } else if (googleFamily !== thisFamily) {
+      if (bunnyFamily === "") {
+        bunnyFamily = thisFamily;
+      } else if (bunnyFamily !== thisFamily) {
         throw new Error(
-          `Inconsistent Google font families found: ${googleFamily} and ${thisFamily}`,
+          `Inconsistent Bunny font families found: ${bunnyFamily} and ${thisFamily}`,
         );
       }
       typographyImports.add(bunnyFontImportString(resolvedFont));
     }
-    if (googleFamily === "") {
+    if (bunnyFamily === "") {
       return undefined;
     }
-    return googleFamily;
+    return bunnyFamily;
+  };
+
+  const resolveFileFontFamily = (
+    brand: Brand,
+    font: BrandFont[],
+  ): string | undefined => {
+    let fileFamily = "";
+    for (const _resolvedFont of font) {
+      const safeResolvedFont = Zod.BrandFontFile.safeParse(_resolvedFont);
+      if (!safeResolvedFont.success) {
+        return undefined;
+      }
+      const resolvedFont = safeResolvedFont.data;
+      const thisFamily = resolvedFont.family;
+      if (!thisFamily) {
+        continue;
+      }
+      if (fileFamily === "") {
+        fileFamily = thisFamily;
+      } else if (fileFamily !== thisFamily) {
+        throw new Error(
+          `Inconsistent Files font families found: ${fileFamily} and ${thisFamily}`,
+        );
+      }
+      typographyImports.add(fileFontImportString(brand, resolvedFont));
+    }
+    if (fileFamily === "") {
+      return undefined;
+    }
+    return fileFamily;
   };
 
   type HTMLFontInformation = { [key: string]: unknown };
 
   type FontKind =
+    | "link"
     | "base"
     | "headings"
     | "monospace"
@@ -394,12 +454,17 @@ const brandTypographyLayer = (
     } else if (typeof resolvedFontOptions === "string") {
       resolvedFontOptions = { family: resolvedFontOptions };
     }
-    const family = resolvedFontOptions.family;
-    const font = getFontFamilies(family);
     const result: HTMLFontInformation = {};
+    // This is an ugly hack:
+    //   resolvedFontOptions doesn't always have 'family', but at this
+    //   point in the code we know resolvedFontOptions is an object
+    //   that we can attempt to extract the family from.
+    const family =
+      (resolvedFontOptions as Record<string, string | undefined>).family;
+    const font = getFontFamilies(family);
     result.family = resolveGoogleFontFamily(font) ??
       resolveBunnyFontFamily(font) ??
-      // resolveFilesFontFamily(font) ??
+      resolveFileFontFamily(brand, font) ??
       family;
     for (
       const entry of [
@@ -520,11 +585,9 @@ const brandTypographyLayer = (
       "monospace",
       "headings",
       "base",
-    ]
+    ] as const
   ) {
-    const fontInformation = resolveHTMLFontInformation(
-      kind as FontKind,
-    );
+    const fontInformation = resolveHTMLFontInformation(kind);
     if (!fontInformation) {
       continue;
     }
@@ -559,29 +622,44 @@ const brandTypographyLayer = (
   };
 };
 
+export interface LightDarkSassLayers {
+  light: SassLayer[];
+  dark: SassLayer[];
+}
+
 export async function brandSassLayers(
   fileName: string | undefined,
   project: ProjectContext,
   nameMap: Record<string, string> = {},
-): Promise<SassLayer[]> {
+): Promise<LightDarkSassLayers> {
   const brand = await project.resolveBrand(fileName);
-  const sassLayers: SassLayer[] = [];
+  const sassLayers: LightDarkSassLayers = {
+    light: [],
+    dark: [],
+  };
 
-  if (brand) {
-    sassLayers.push({
-      defaults: '$theme: "brand" !default;',
-      uses: "",
-      functions: "",
-      mixins: "",
-      rules: "",
-    });
+  for (const mode of ["light", "dark"] as Array<"dark" | "light">) {
+    if (brand && brand[mode]) {
+      sassLayers[mode].push({
+        defaults: '$theme: "brand" !default;',
+        uses: "",
+        functions: "",
+        mixins: "",
+        rules: "",
+      });
+    }
   }
-  if (brand?.data.color) {
-    sassLayers.push(brandColorLayer(brand, nameMap));
+  if (brand?.light?.data.color) {
+    sassLayers.light.push(brandColorLayer(brand?.light, nameMap));
   }
-
-  if (brand?.data.typography) {
-    sassLayers.push(brandTypographyLayer(brand));
+  if (brand?.dark?.data.color) {
+    sassLayers.dark.push(brandColorLayer(brand?.dark, nameMap));
+  }
+  if (brand?.light?.data.typography) {
+    sassLayers.light.push(brandTypographyLayer(brand?.light));
+  }
+  if (brand?.dark?.data.typography) {
+    sassLayers.dark.push(brandTypographyLayer(brand?.dark));
   }
 
   return sassLayers;
@@ -591,7 +669,7 @@ export async function brandBootstrapSassLayers(
   fileName: string | undefined,
   project: ProjectContext,
   nameMap: Record<string, string> = {},
-): Promise<SassLayer[]> {
+): Promise<LightDarkSassLayers> {
   const layers = await brandSassLayers(
     fileName,
     project,
@@ -599,8 +677,11 @@ export async function brandBootstrapSassLayers(
   );
 
   const brand = await project.resolveBrand(fileName);
-  if (brand?.data?.defaults?.bootstrap) {
-    layers.unshift(brandDefaultsBootstrapLayer(brand));
+  if (brand?.light?.data?.defaults?.bootstrap) {
+    layers.light.unshift(brandDefaultsBootstrapLayer(brand.light));
+  }
+  if (brand?.dark?.data?.defaults?.bootstrap) {
+    layers.dark.unshift(brandDefaultsBootstrapLayer(brand.dark));
   }
 
   return layers;
@@ -608,19 +689,23 @@ export async function brandBootstrapSassLayers(
 
 export async function brandRevealSassLayers(
   input: string | undefined,
-  _format: Format,
+  format: Format,
   project: ProjectContext,
 ): Promise<SassLayer[]> {
-  return brandSassLayers(
+  let brandMode: "light" | "dark" = "light";
+  if (format.metadata[kBrandMode] === "dark") {
+    brandMode = "dark";
+  }
+  return (await brandSassLayers(
     input,
     project,
     defaultColorNameMap,
-  );
+  ))[brandMode];
 }
 
 export async function brandSassFormatExtras(
   input: string | undefined,
-  _format: Format,
+  format: Format,
   project: ProjectContext,
 ): Promise<FormatExtras> {
   const htmlSassBundleLayers = await brandBootstrapSassLayers(
@@ -634,7 +719,13 @@ export async function brandSassFormatExtras(
         {
           key: "brand",
           dependency: "bootstrap",
-          user: htmlSassBundleLayers,
+          user: htmlSassBundleLayers.light,
+          dark: htmlSassBundleLayers.dark.length
+            ? {
+              user: htmlSassBundleLayers.dark,
+              default: darkModeDefault(format),
+            }
+            : undefined,
         },
       ],
     },
