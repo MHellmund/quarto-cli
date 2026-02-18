@@ -8,6 +8,10 @@ All changes included in 1.8:
 - ([#12780](https://github.com/quarto-dev/quarto-cli/issues/12780)): `keep-ipynb: true` now works again correctly and intermediate `.quarto_ipynb` is not removed.
 - ([#13051](https://github.com/quarto-dev/quarto-cli/issues/13051)): Fixed support for captioned Markdown table inside Div syntax for crossref. This is special handling, but this could be output by function like `knitr::kable()` with old option support.
 
+## Backwards-compatibility breaking changes
+
+- ([#13104](https://github.com/quarto-dev/quarto-cli/issues/13104)): Remove `posit-cloud` as `quarto publish` destination. See <https://docs.posit.co/cloud/whats_new/#october-2024> for details.
+
 ## Dependencies
 
 - Update `bootstrap-icons` to version v1.13.1 from v1.11.1.
@@ -42,6 +46,7 @@ All changes included in 1.8:
 - ([#12598](https://github.com/quarto-dev/quarto-cli/pull/12598)): Ensure `.fragment` on an image with caption applies to whole figure.
 - ([#12716](https://github.com/quarto-dev/quarto-cli/issues/12716)): Correctly resolve `"brand"` set in `theme` configuration for document in subdirectory from project root.
 - Use `cdn.jsdelivr.net` for mathjax dependencies to ensure consistent CDN usage across formats. Previously, `cdnjs.cloudflare.com` was used for `revealjs` mathjax dependencies, while `cdn.jsdelivr.net` was used for html format.
+- [#13316](https://github.com/quarto-dev/quarto-cli/issues/13316): `code-line-numbers: "1"` correctly highlight the first line now.
 
 ### `docx`
 
@@ -62,9 +67,21 @@ All changes included in 1.8:
 
 - ([#12775](https://github.com/quarto-dev/quarto-cli/issues/12775)): Convert Quarto-native layouts (divs with `layout` syntax) to Beamer columns, equivalent to using the Pandoc-native syntax of div with `columns` and `column` classes.
 
+### `pdf`
+
+- ([#12732](https://github.com/quarto-dev/quarto-cli/issues/12732)): Correctly detect missing definition files in multiline babel error for search package to auto-install.
+
 ### `hugo-md`
 
 - ([#12676](https://github.com/quarto-dev/quarto-cli/issues/12676)): Add support for rendering layout panels that are not floats.
+
+### `docusaurus-md`
+
+- [#13316](https://github.com/quarto-dev/quarto-cli/issues/13316): `code-line-numbers: "1"` correctly highlight the first line now.
+
+### `markdown` formats
+
+- ([#12630])(https://github.com/quarto-dev/quarto-cli/issues/12630)): emit image element for `video` shortcodes targeting local videos.
 
 ## Projects
 
@@ -89,6 +106,7 @@ All changes included in 1.8:
 - ([#13112](https://github.com/quarto-dev/quarto-cli/pull/13112)): Add `quarto.format.format_identifier()` API entry.
 - ([#13128](https://github.com/quarto-dev/quarto-cli/issues/13128)): Avoid meta shortcode crash on bad input.
 - ([#13246](https://github.com/quarto-dev/quarto-cli/pull/13246)): Add `quarto.variables.get()` and `quarto.metadata.get()` APIs.
+- ([#13334](https://github.com/quarto-dev/quarto-cli/issues/13334)): Fix wrong function being called on `is_html_slide_output` and `is_markdown_with_html_output`.
 
 ## Commands
 

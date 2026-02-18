@@ -12,6 +12,7 @@ import { Document, Element } from "../../../core/deno-dom.ts";
 
 import { pathWithForwardSlashes, safeExistsSync } from "../../../core/path.ts";
 import { resourcePath } from "../../../core/resources.ts";
+import { isExternalPath } from "../../../core/url.ts";
 import { renderEjs } from "../../../core/ejs.ts";
 import { warnOnce } from "../../../core/log.ts";
 import { asHtmlId } from "../../../core/html.ts";
@@ -559,7 +560,8 @@ function navigationHtmlPostprocessor(
       const navLinkHref = navLink.getAttribute("href");
 
       const sidebarLink = doc.querySelector(
-        '.sidebar-navigation a[href="' + navLinkHref + '"]',
+        '.sidebar-navigation a[href="' + navLinkHref +
+          '"]:not(.sidebar-logo-link)',
       );
       // if the link is either for the current window href or appears on the
       // sidebar then set it to active
@@ -1203,7 +1205,7 @@ function nextAndPrevious(
       (sidebarItem: SidebarItem) => {
         return sidebarItem.href || Math.random().toString();
       },
-    );
+    ) as SidebarItem[];
 
     const index = sidebarItemsUniq.findIndex((item) => item.href === href);
     const nextPage = index > -1 && index < sidebarItemsUniq.length - 1 &&
@@ -1537,10 +1539,6 @@ function navigationDependency(resource: string) {
     name: basename(resource),
     path: resourcePath(`projects/website/navigation/${resource}`),
   };
-}
-
-function isExternalPath(path: string) {
-  return /^\w+:/.test(path);
 }
 
 function resolveNavReferences(
